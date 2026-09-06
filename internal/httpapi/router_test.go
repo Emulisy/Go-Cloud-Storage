@@ -28,7 +28,6 @@ func TestHealth(t *testing.T) {
 		)
 	}
 
-	// TODO: Assert that Content-Type is application/json.
 	if contentType := response.Header.Get("Content-Type"); contentType != "application/json" {
 		t.Errorf("Content-Type: got %q, want %q", contentType, "application/json")
 	}
@@ -38,19 +37,12 @@ func TestHealth(t *testing.T) {
 		t.Fatalf("read response body: %v", err)
 	}
 
-	// TODO: Assert that body equals:
-	// {"status":"ok"} followed by a newline.
-
 	if string(body) != "{\"status\":\"ok\"}\n" {
 		t.Errorf("body: got %q, want %q", string(body), "{\"status\":\"ok\"}\n")
 	}
 }
 
 func TestUnknownRoute(t *testing.T) {
-	// TODO:
-	// 1. Request GET /does-not-exist.
-	// 2. Pass it to NewHandler().
-	// 3. Verify that the result is 404 Not Found.
 	request := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
 
 	handler := NewHandler()

@@ -17,8 +17,5 @@ func main() {
 
 	log.Printf("server listening on %s", server.Addr)
 
-	// TODO:
-	// Start the server.
-	// If it returns an unexpected error, log it and terminate.
 	log.Fatal(server.ListenAndServe())
 }
