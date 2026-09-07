@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"io"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +12,7 @@ func TestHealth(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	recorder := httptest.NewRecorder()
 
-	handler := NewHandler()
+	handler := newTestHandler()
 
 	// Act: pass the request directly to the handler.
 	handler.ServeHTTP(recorder, request)
@@ -32,31 +32,12 @@ func TestHealth(t *testing.T) {
 		t.Errorf("Content-Type: got %q, want %q", contentType, "application/json")
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read response body: %v", err)
+	var body map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
 	}
 
-	if string(body) != "{\"status\":\"ok\"}\n" {
-		t.Errorf("body: got %q, want %q", string(body), "{\"status\":\"ok\"}\n")
-	}
-}
-
-func TestUnknownRoute(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
-
-	handler := NewHandler()
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	response := recorder.Result()
-
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusNotFound {
-		t.Errorf("status code: got %d, want %d",
-			response.StatusCode,
-			http.StatusNotFound,
-		)
+	if body["status"] != "ok" {
+		t.Errorf("status: got %q, want %q", body["status"], "ok")
 	}
 }

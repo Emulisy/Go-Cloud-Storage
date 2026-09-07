@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
 // fileMetadataResponse is the JSON shape returned by the metadata endpoint.
@@ -14,48 +17,44 @@ type fileMetadataResponse struct {
 	Checksum string `json:"checksum,omitempty"`
 }
 
-func getFileMetadata(w http.ResponseWriter, r *http.Request) {
+func (a *API) getFileMetadata(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// TODO 2: Call findSampleFile and return 404 when it is not found.
-	file, found := findSampleFile(id)
-	if !found {
-		http.Error(w, "file not found", http.StatusNotFound)
+
+	includeChecksum := r.URL.Query().Get("include_checksum")
+	if includeChecksum != "" && includeChecksum != "true" && includeChecksum != "false" {
+		http.Error(w, "invalid include_checksum value", http.StatusBadRequest)
 		return
 	}
-	// TODO 3: Read the optional include_checksum query parameter.
-	includeChecksum := r.URL.Query().Get("include_checksum")
-	// TODO 4: If supplied, parse it as a boolean; return 400 when invalid.
-	if includeChecksum != "" {
-		if includeChecksum != "true" && includeChecksum != "false" {
-			http.Error(w, "invalid include_checksum value", http.StatusBadRequest)
+
+	metadata, err := a.files.Get(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, files.ErrNotFound) {
+			http.Error(w, "file not found", http.StatusNotFound)
 			return
 		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
-	// TODO 5: Clear Checksum when include_checksum is false or omitted.
-	if includeChecksum == "false" || includeChecksum == "" {
+
+	file := fileMetadataResponse{
+		ID:       metadata.ID,
+		Name:     metadata.Name,
+		Size:     metadata.Size,
+		Checksum: metadata.Checksum,
+	}
+
+	if includeChecksum != "true" {
 		file.Checksum = ""
 	}
-	// TODO 6: Return the metadata as JSON with status 200.
+
+	payload, err := json.Marshal(file)
+	if err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	encoder := json.NewEncoder(w)
-	err := encoder.Encode(file)
-	if err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
-}
 
-// findSampleFile temporarily replaces a real metadata store.
-// A later phase will inject a storage interface and remove this function.
-func findSampleFile(id string) (fileMetadataResponse, bool) {
-	if id != "file-123" {
-		return fileMetadataResponse{}, false
-	}
-
-	return fileMetadataResponse{
-		ID:       "file-123",
-		Name:     "notes.txt",
-		Size:     128,
-		Checksum: "sha256:example",
-	}, true
+	_, _ = w.Write(payload)
 }

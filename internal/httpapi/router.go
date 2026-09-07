@@ -3,23 +3,32 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
-func NewHandler() http.Handler {
+type API struct {
+	files files.Reader
+}
+
+func NewHandler(fileReader files.Reader) http.Handler {
+	api := &API{files: fileReader}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", health)
-	mux.HandleFunc("GET /files/{id}", getFileMetadata)
+	mux.HandleFunc("GET /files/{id}", api.getFileMetadata)
 
 	return mux
 }
 
 func health(w http.ResponseWriter, r *http.Request) {
+	payload, err := json.Marshal(map[string]string{"status": "ok"})
+	if err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	encoder := json.NewEncoder(w)
-	err := encoder.Encode(map[string]string{"status": "ok"})
-	if err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
+	_, _ = w.Write(payload)
 }

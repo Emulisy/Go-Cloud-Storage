@@ -4,11 +4,18 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/httpapi"
 )
 
 func main() {
-	handler := httpapi.NewHandler()
+	fileReader := files.NewMemoryStore([]files.Metadata{{
+		ID:       "file-123",
+		Name:     "notes.txt",
+		Size:     128,
+		Checksum: "sha256:example",
+	}})
+	handler := httpapi.NewHandler(fileReader)
 
 	server := &http.Server{
 		Addr:    ":8080",
