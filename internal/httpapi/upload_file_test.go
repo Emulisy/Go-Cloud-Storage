@@ -23,7 +23,7 @@ func TestUploadFile(t *testing.T) {
 		Checksum: "sha256:example",
 	}
 	uploader := &recordingUploader{metadata: want}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader)
+	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
 	request := newMultipartUploadRequest(t, "notes.txt", []byte("hello"))
 	recorder := httptest.NewRecorder()
 
@@ -73,7 +73,7 @@ func TestUploadFile(t *testing.T) {
 
 func TestUploadFileRejectsNonMultipartRequest(t *testing.T) {
 	uploader := &recordingUploader{}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader)
+	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/files",
@@ -98,7 +98,7 @@ func TestUploadFileRejectsNonMultipartRequest(t *testing.T) {
 
 func TestUploadFileRequiresFileField(t *testing.T) {
 	uploader := &recordingUploader{}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader)
+	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
 	request := newMultipartRequestWithoutFile(t)
 	recorder := httptest.NewRecorder()
 
@@ -118,7 +118,7 @@ func TestUploadFileRequiresFileField(t *testing.T) {
 
 func TestUploadFileRejectsOversizedRequest(t *testing.T) {
 	uploader := &recordingUploader{}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader)
+	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
 	content := bytes.Repeat([]byte("x"), int(maxUploadRequestBytes))
 	request := newMultipartUploadRequest(t, "large.bin", content)
 	recorder := httptest.NewRecorder()
@@ -163,7 +163,11 @@ func TestUploadFileMapsServiceErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			uploader := &recordingUploader{err: tt.serviceErr}
-			handler := NewHandler(files.NewMemoryStore(nil), uploader)
+			handler := NewHandler(
+				files.NewMemoryStore(nil),
+				uploader,
+				downloaderStub{},
+			)
 			request := newMultipartUploadRequest(
 				t,
 				"notes.txt",

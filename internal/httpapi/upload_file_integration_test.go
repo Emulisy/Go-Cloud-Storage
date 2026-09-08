@@ -27,6 +27,7 @@ func TestUploadFileIntegrationPersistsMetadataAndContent(t *testing.T) {
 	handler := NewHandler(
 		metadataStore,
 		uploadservice.NewService(blobStore, metadataStore),
+		downloaderStub{},
 	)
 	content := []byte("hello cloud storage")
 	request := newMultipartUploadRequest(t, "notes.txt", content)

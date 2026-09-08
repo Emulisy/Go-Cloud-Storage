@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Emulisy/Go-Cloud-Storage/internal/blob"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/download"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/httpapi"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/upload"
@@ -19,7 +20,8 @@ func main() {
 	}
 
 	uploadService := upload.NewService(blobStore, metadataStore)
-	handler := httpapi.NewHandler(metadataStore, uploadService)
+	downloadService := download.NewService(blobStore, metadataStore)
+	handler := httpapi.NewHandler(metadataStore, uploadService, downloadService)
 
 	server := &http.Server{
 		Addr:    ":8080",

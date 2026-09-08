@@ -6,12 +6,14 @@ import (
 	"io"
 	"net/http"
 
+	downloadservice "github.com/Emulisy/Go-Cloud-Storage/internal/download"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
 type API struct {
-	files    files.Reader
-	uploader FileUploader
+	files      files.Reader
+	uploader   FileUploader
+	downloader FileDownloader
 }
 
 // FileUploader is the application behavior required by the upload endpoint.
@@ -19,16 +21,27 @@ type FileUploader interface {
 	Upload(ctx context.Context, name string, content io.Reader) (files.Metadata, error)
 }
 
-func NewHandler(fileReader files.Reader, uploader FileUploader) http.Handler {
+// FileDownloader is the application behavior required by the download endpoint.
+type FileDownloader interface {
+	Download(ctx context.Context, id string) (downloadservice.File, error)
+}
+
+func NewHandler(
+	fileReader files.Reader,
+	uploader FileUploader,
+	downloader FileDownloader,
+) http.Handler {
 	api := &API{
-		files:    fileReader,
-		uploader: uploader,
+		files:      fileReader,
+		uploader:   uploader,
+		downloader: downloader,
 	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /files/{id}", api.getFileMetadata)
 	mux.HandleFunc("POST /files", api.uploadFile)
+	mux.HandleFunc("GET /files/{id}/content", api.downloadFile)
 
 	return mux
 }

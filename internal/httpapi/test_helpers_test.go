@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	downloadservice "github.com/Emulisy/Go-Cloud-Storage/internal/download"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
@@ -17,7 +18,7 @@ func newTestHandler() http.Handler {
 		Checksum: "sha256:example",
 	}})
 
-	return NewHandler(store, uploaderStub{})
+	return NewHandler(store, uploaderStub{}, downloaderStub{})
 }
 
 type uploaderStub struct {
@@ -37,4 +38,18 @@ func (s uploaderStub) Upload(
 		return files.Metadata{}, errors.New("unexpected upload call")
 	}
 	return s.upload(ctx, name, content)
+}
+
+type downloaderStub struct {
+	download func(ctx context.Context, id string) (downloadservice.File, error)
+}
+
+func (s downloaderStub) Download(
+	ctx context.Context,
+	id string,
+) (downloadservice.File, error) {
+	if s.download == nil {
+		return downloadservice.File{}, errors.New("unexpected download call")
+	}
+	return s.download(ctx, id)
 }
