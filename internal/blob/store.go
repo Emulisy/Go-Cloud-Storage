@@ -11,6 +11,7 @@ var (
 	ErrInvalidKey    = errors.New("invalid blob key")
 	ErrInvalidSource = errors.New("invalid blob source")
 	ErrAlreadyExists = errors.New("blob already exists")
+	ErrNotFound      = errors.New("blob not found")
 )
 
 // PutResult describes content after it has been stored successfully.
@@ -22,4 +23,15 @@ type PutResult struct {
 // Writer stores a byte stream under an application-generated object key.
 type Writer interface {
 	Put(ctx context.Context, key string, source io.Reader) (PutResult, error)
+}
+
+// Deleter removes content previously stored under a key.
+type Deleter interface {
+	Delete(ctx context.Context, key string) error
+}
+
+// Store combines the write and delete operations implemented by LocalStore.
+type Store interface {
+	Writer
+	Deleter
 }

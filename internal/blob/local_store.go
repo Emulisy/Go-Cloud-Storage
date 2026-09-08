@@ -19,7 +19,7 @@ type LocalStore struct {
 	mu   sync.Mutex
 }
 
-var _ Writer = (*LocalStore)(nil)
+var _ Store = (*LocalStore)(nil)
 
 func NewLocalStore(root string) (*LocalStore, error) {
 	if strings.TrimSpace(root) == "" {
@@ -109,6 +109,36 @@ func (s *LocalStore) Put(
 		Size:     written,
 		Checksum: "sha256:" + hex.EncodeToString(hasher.Sum(nil)),
 	}, nil
+}
+
+func (s *LocalStore) Delete(ctx context.Context, key string) error {
+	// TODO 1: Return ctx.Err() when the request is already cancelled.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	// TODO 2: Validate key with validKey and return ErrInvalidKey when invalid.
+	if !validKey(key) {
+		return ErrInvalidKey
+	}
+	// TODO 3: Lock the store so Delete cannot race with Put.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// TODO 4: Recheck ctx.Err() after acquiring the lock.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// TODO 5: Remove the file at filepath.Join(s.root, key).
+	err := os.Remove(filepath.Join(s.root, key))
+	if err != nil {
+		// TODO 6: Translate os.ErrNotExist into ErrNotFound.
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("remove blob: %w", err)
+	}
+	return nil
 }
 
 func validKey(key string) bool {
