@@ -1,22 +1,34 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
 type API struct {
-	files files.Reader
+	files    files.Reader
+	uploader FileUploader
 }
 
-func NewHandler(fileReader files.Reader) http.Handler {
-	api := &API{files: fileReader}
+// FileUploader is the application behavior required by the upload endpoint.
+type FileUploader interface {
+	Upload(ctx context.Context, name string, content io.Reader) (files.Metadata, error)
+}
+
+func NewHandler(fileReader files.Reader, uploader FileUploader) http.Handler {
+	api := &API{
+		files:    fileReader,
+		uploader: uploader,
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /files/{id}", api.getFileMetadata)
+	mux.HandleFunc("POST /files", api.uploadFile)
 
 	return mux
 }

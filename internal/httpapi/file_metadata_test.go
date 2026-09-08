@@ -116,7 +116,7 @@ func TestGetFileMetadataStoreFailure(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	store := failingReader{err: errors.New("store unavailable")}
 
-	NewHandler(store).ServeHTTP(recorder, request)
+	NewHandler(store, uploaderStub{}).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Errorf(
