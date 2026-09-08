@@ -25,13 +25,19 @@ type Writer interface {
 	Put(ctx context.Context, key string, source io.Reader) (PutResult, error)
 }
 
+// Reader opens stored content as a stream. The caller must close it.
+type Reader interface {
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
+}
+
 // Deleter removes content previously stored under a key.
 type Deleter interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// Store combines the write and delete operations implemented by LocalStore.
+// Store combines the read, write, and delete operations implemented by LocalStore.
 type Store interface {
 	Writer
+	Reader
 	Deleter
 }

@@ -11,12 +11,7 @@ import (
 )
 
 func main() {
-	metadataStore := files.NewMemoryStore([]files.Metadata{{
-		ID:       "file-123",
-		Name:     "notes.txt",
-		Size:     128,
-		Checksum: "sha256:example",
-	}})
+	metadataStore := files.NewMemoryStore(nil)
 
 	blobStore, err := blob.NewLocalStore("data/blobs")
 	if err != nil {

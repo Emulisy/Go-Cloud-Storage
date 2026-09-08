@@ -111,6 +111,26 @@ func (s *LocalStore) Put(
 	}, nil
 }
 
+func (s *LocalStore) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if !validKey(key) {
+		return nil, ErrInvalidKey
+	}
+
+	file, err := os.Open(filepath.Join(s.root, key))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("open blob: %w", err)
+	}
+
+	return file, nil
+}
+
 func (s *LocalStore) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err

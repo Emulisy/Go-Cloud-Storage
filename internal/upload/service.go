@@ -18,19 +18,25 @@ var (
 
 type IDGenerator func() (string, error)
 
+// ContentStore is the blob behavior required specifically by uploads.
+type ContentStore interface {
+	blob.Writer
+	blob.Deleter
+}
+
 // Service coordinates content storage and metadata storage.
 type Service struct {
-	blobs    blob.Store
+	blobs    ContentStore
 	metadata files.Writer
 	newID    IDGenerator
 }
 
-func NewService(blobs blob.Store, metadata files.Writer) *Service {
+func NewService(blobs ContentStore, metadata files.Writer) *Service {
 	return newService(blobs, metadata, RandomID)
 }
 
 func newService(
-	blobs blob.Store,
+	blobs ContentStore,
 	metadata files.Writer,
 	newID IDGenerator,
 ) *Service {
