@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"path"
@@ -10,16 +11,16 @@ import (
 	"strings"
 	"unicode"
 
-	downloadservice "github.com/Emulisy/Go-Cloud-Storage/internal/download"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/download"
 )
 
-func (a *API) downloadFile(w http.ResponseWriter, r *http.Request) {
+func (a *api) downloadFile(w http.ResponseWriter, r *http.Request) {
 	file, err := a.downloader.Download(r.Context(), r.PathValue("id"))
 	if err != nil {
 		switch {
-		case errors.Is(err, downloadservice.ErrInvalidID):
+		case errors.Is(err, download.ErrInvalidID):
 			http.Error(w, "invalid file ID", http.StatusBadRequest)
-		case errors.Is(err, downloadservice.ErrNotFound):
+		case errors.Is(err, download.ErrNotFound):
 			http.Error(w, "file not found", http.StatusNotFound)
 		default:
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -44,10 +45,13 @@ func (a *API) downloadFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := io.Copy(w, file.Content); err != nil {
-		return
+		// Headers have been sent; an HTTP error would corrupt the download body.
+		log.Printf("stream file %q: %v", file.Metadata.ID, err)
 	}
 }
 
+// safeDownloadName derives an attachment display name from untrusted metadata.
+// It is header presentation logic, not validation of a filesystem storage key.
 func safeDownloadName(name string) string {
 	name = strings.ReplaceAll(name, "\\", "/")
 	name = path.Base(name)

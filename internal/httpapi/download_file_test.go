@@ -13,6 +13,7 @@ import (
 
 	downloadservice "github.com/Emulisy/Go-Cloud-Storage/internal/download"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/storage/memory"
 )
 
 func TestDownloadFile(t *testing.T) {
@@ -337,7 +338,7 @@ func (w *failingResponseWriter) Write(p []byte) (int, error) {
 
 func newDownloadTestHandler(downloader FileDownloader) http.Handler {
 	return NewHandler(
-		files.NewMemoryStore(nil),
+		memory.NewMetadataStore(nil),
 		uploaderStub{},
 		downloader,
 	)

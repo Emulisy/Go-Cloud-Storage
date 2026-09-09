@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/storage/memory"
 	uploadservice "github.com/Emulisy/Go-Cloud-Storage/internal/upload"
 )
 
@@ -23,7 +24,7 @@ func TestUploadFile(t *testing.T) {
 		Checksum: "sha256:example",
 	}
 	uploader := &recordingUploader{metadata: want}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
+	handler := NewHandler(memory.NewMetadataStore(nil), uploader, downloaderStub{})
 	request := newMultipartUploadRequest(t, "notes.txt", []byte("hello"))
 	recorder := httptest.NewRecorder()
 
@@ -73,7 +74,7 @@ func TestUploadFile(t *testing.T) {
 
 func TestUploadFileRejectsNonMultipartRequest(t *testing.T) {
 	uploader := &recordingUploader{}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
+	handler := NewHandler(memory.NewMetadataStore(nil), uploader, downloaderStub{})
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/files",
@@ -98,7 +99,7 @@ func TestUploadFileRejectsNonMultipartRequest(t *testing.T) {
 
 func TestUploadFileRequiresFileField(t *testing.T) {
 	uploader := &recordingUploader{}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
+	handler := NewHandler(memory.NewMetadataStore(nil), uploader, downloaderStub{})
 	request := newMultipartRequestWithoutFile(t)
 	recorder := httptest.NewRecorder()
 
@@ -118,7 +119,7 @@ func TestUploadFileRequiresFileField(t *testing.T) {
 
 func TestUploadFileRejectsOversizedRequest(t *testing.T) {
 	uploader := &recordingUploader{}
-	handler := NewHandler(files.NewMemoryStore(nil), uploader, downloaderStub{})
+	handler := NewHandler(memory.NewMetadataStore(nil), uploader, downloaderStub{})
 	content := bytes.Repeat([]byte("x"), int(maxUploadRequestBytes))
 	request := newMultipartUploadRequest(t, "large.bin", content)
 	recorder := httptest.NewRecorder()
@@ -164,7 +165,7 @@ func TestUploadFileMapsServiceErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			uploader := &recordingUploader{err: tt.serviceErr}
 			handler := NewHandler(
-				files.NewMemoryStore(nil),
+				memory.NewMetadataStore(nil),
 				uploader,
 				downloaderStub{},
 			)

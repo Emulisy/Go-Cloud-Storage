@@ -1,4 +1,4 @@
-package blob
+package local
 
 import (
 	"bytes"
@@ -10,14 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/blob"
 )
 
 func TestNewLocalStoreCreatesRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "objects")
 
-	_, err := NewLocalStore(root)
+	_, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 
 	info, err := os.Stat(root)
@@ -30,18 +32,18 @@ func TestNewLocalStoreCreatesRoot(t *testing.T) {
 }
 
 func TestNewLocalStoreRejectsBlankRoot(t *testing.T) {
-	_, err := NewLocalStore("   ")
+	_, err := NewBlobStore("   ")
 
 	if !errors.Is(err, ErrInvalidRoot) {
-		t.Errorf("NewLocalStore() error = %v, want ErrInvalidRoot", err)
+		t.Errorf("NewBlobStore() error = %v, want ErrInvalidRoot", err)
 	}
 }
 
 func TestLocalStorePut(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewLocalStore(root)
+	store, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	content := []byte("hello cloud storage")
 	sum := sha256.Sum256(content)
@@ -73,9 +75,9 @@ func TestLocalStorePut(t *testing.T) {
 }
 
 func TestLocalStorePutRejectsInvalidKeys(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	keys := []string{
 		"",
@@ -89,30 +91,30 @@ func TestLocalStorePutRejectsInvalidKeys(t *testing.T) {
 	for _, key := range keys {
 		t.Run(key, func(t *testing.T) {
 			_, err := store.Put(context.Background(), key, bytes.NewReader(nil))
-			if !errors.Is(err, ErrInvalidKey) {
-				t.Errorf("Put() error = %v, want ErrInvalidKey", err)
+			if !errors.Is(err, blob.ErrInvalidKey) {
+				t.Errorf("Put() error = %v, want blob.ErrInvalidKey", err)
 			}
 		})
 	}
 }
 
 func TestLocalStorePutRejectsNilSource(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 
 	_, err = store.Put(context.Background(), "file-123", nil)
-	if !errors.Is(err, ErrInvalidSource) {
-		t.Errorf("Put() error = %v, want ErrInvalidSource", err)
+	if !errors.Is(err, blob.ErrInvalidSource) {
+		t.Errorf("Put() error = %v, want blob.ErrInvalidSource", err)
 	}
 }
 
 func TestLocalStorePutDoesNotOverwrite(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewLocalStore(root)
+	store, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 
 	if _, err := store.Put(
@@ -128,8 +130,8 @@ func TestLocalStorePutDoesNotOverwrite(t *testing.T) {
 		"file-123",
 		bytes.NewBufferString("replacement"),
 	)
-	if !errors.Is(err, ErrAlreadyExists) {
-		t.Fatalf("second Put() error = %v, want ErrAlreadyExists", err)
+	if !errors.Is(err, blob.ErrAlreadyExists) {
+		t.Fatalf("second Put() error = %v, want blob.ErrAlreadyExists", err)
 	}
 
 	stored, err := os.ReadFile(filepath.Join(root, "file-123"))
@@ -143,9 +145,9 @@ func TestLocalStorePutDoesNotOverwrite(t *testing.T) {
 
 func TestLocalStorePutCancelled(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewLocalStore(root)
+	store, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -159,9 +161,9 @@ func TestLocalStorePutCancelled(t *testing.T) {
 
 func TestLocalStorePutCleansUpAfterReadFailure(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewLocalStore(root)
+	store, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	wantErr := errors.New("source read failed")
 

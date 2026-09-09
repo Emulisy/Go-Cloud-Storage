@@ -1,17 +1,23 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
-	uploadservice "github.com/Emulisy/Go-Cloud-Storage/internal/upload"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/upload"
 )
 
+// maxUploadRequestBytes limits the complete multipart body, including overhead.
 const maxUploadRequestBytes int64 = 1 << 20
 
-func (a *API) uploadFile(w http.ResponseWriter, r *http.Request) {
+func (a *api) uploadFile(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestBytes)
+	// Release multipart resources even when parsing or the upload fails.
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -28,8 +34,8 @@ func (a *API) uploadFile(w http.ResponseWriter, r *http.Request) {
 
 	metadata, err := a.uploader.Upload(r.Context(), header.Filename, file)
 	if err != nil {
-		if errors.Is(err, uploadservice.ErrInvalidName) ||
-			errors.Is(err, uploadservice.ErrInvalidContent) {
+		if errors.Is(err, upload.ErrInvalidName) ||
+			errors.Is(err, upload.ErrInvalidContent) {
 			http.Error(w, "invalid upload", http.StatusBadRequest)
 			return
 		}
@@ -38,21 +44,6 @@ func (a *API) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := fileMetadataResponse{
-		ID:       metadata.ID,
-		Name:     metadata.Name,
-		Size:     metadata.Size,
-		Checksum: metadata.Checksum,
-	}
-
-	payload, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Location", "/files/"+metadata.ID)
-	w.WriteHeader(http.StatusCreated)
-	_, _ = w.Write(payload)
+	writeJSON(w, http.StatusCreated, metadataResponse(metadata))
 }

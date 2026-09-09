@@ -1,14 +1,16 @@
-package files
+package memory
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
 func TestMemoryStoreCreate(t *testing.T) {
-	store := NewMemoryStore(nil)
-	want := Metadata{
+	store := NewMetadataStore(nil)
+	want := files.Metadata{
 		ID:       "file-123",
 		Name:     "notes.txt",
 		Size:     128,
@@ -30,21 +32,21 @@ func TestMemoryStoreCreate(t *testing.T) {
 }
 
 func TestMemoryStoreCreateDuplicateDoesNotOverwrite(t *testing.T) {
-	original := Metadata{
+	original := files.Metadata{
 		ID:   "file-123",
 		Name: "original.txt",
 		Size: 10,
 	}
-	store := NewMemoryStore([]Metadata{original})
-	replacement := Metadata{
+	store := NewMetadataStore([]files.Metadata{original})
+	replacement := files.Metadata{
 		ID:   original.ID,
 		Name: "replacement.txt",
 		Size: 20,
 	}
 
 	err := store.Create(context.Background(), replacement)
-	if !errors.Is(err, ErrAlreadyExists) {
-		t.Fatalf("Create() error = %v, want ErrAlreadyExists", err)
+	if !errors.Is(err, files.ErrAlreadyExists) {
+		t.Fatalf("Create() error = %v, want files.ErrAlreadyExists", err)
 	}
 
 	got, err := store.Get(context.Background(), original.ID)
@@ -60,49 +62,49 @@ func TestMemoryStoreCreateDuplicateDoesNotOverwrite(t *testing.T) {
 func TestMemoryStoreCreateRejectsInvalidMetadata(t *testing.T) {
 	tests := []struct {
 		name     string
-		metadata Metadata
+		metadata files.Metadata
 	}{
 		{
 			name:     "empty ID",
-			metadata: Metadata{Name: "notes.txt"},
+			metadata: files.Metadata{Name: "notes.txt"},
 		},
 		{
 			name:     "whitespace ID",
-			metadata: Metadata{ID: "   ", Name: "notes.txt"},
+			metadata: files.Metadata{ID: "   ", Name: "notes.txt"},
 		},
 		{
 			name:     "empty name",
-			metadata: Metadata{ID: "file-123"},
+			metadata: files.Metadata{ID: "file-123"},
 		},
 		{
 			name:     "whitespace name",
-			metadata: Metadata{ID: "file-123", Name: "   "},
+			metadata: files.Metadata{ID: "file-123", Name: "   "},
 		},
 		{
 			name:     "negative size",
-			metadata: Metadata{ID: "file-123", Name: "notes.txt", Size: -1},
+			metadata: files.Metadata{ID: "file-123", Name: "notes.txt", Size: -1},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := NewMemoryStore(nil)
+			store := NewMetadataStore(nil)
 
 			err := store.Create(context.Background(), tt.metadata)
 
-			if !errors.Is(err, ErrInvalidMetadata) {
-				t.Errorf("Create() error = %v, want ErrInvalidMetadata", err)
+			if !errors.Is(err, files.ErrInvalidMetadata) {
+				t.Errorf("Create() error = %v, want files.ErrInvalidMetadata", err)
 			}
 		})
 	}
 }
 
 func TestMemoryStoreCreateCancelled(t *testing.T) {
-	store := NewMemoryStore(nil)
+	store := NewMetadataStore(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := store.Create(ctx, Metadata{
+	err := store.Create(ctx, files.Metadata{
 		ID:   "file-123",
 		Name: "notes.txt",
 	})

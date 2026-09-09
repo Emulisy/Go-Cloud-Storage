@@ -1,19 +1,21 @@
-package files
+package memory
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
 )
 
 func TestMemoryStoreGet(t *testing.T) {
-	want := Metadata{
+	want := files.Metadata{
 		ID:       "file-123",
 		Name:     "notes.txt",
 		Size:     128,
 		Checksum: "sha256:example",
 	}
-	store := NewMemoryStore([]Metadata{want})
+	store := NewMetadataStore([]files.Metadata{want})
 
 	got, err := store.Get(context.Background(), want.ID)
 	if err != nil {
@@ -26,17 +28,17 @@ func TestMemoryStoreGet(t *testing.T) {
 }
 
 func TestMemoryStoreGetNotFound(t *testing.T) {
-	store := NewMemoryStore(nil)
+	store := NewMetadataStore(nil)
 
 	_, err := store.Get(context.Background(), "missing")
 
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("Get() error = %v, want ErrNotFound", err)
+	if !errors.Is(err, files.ErrNotFound) {
+		t.Errorf("Get() error = %v, want files.ErrNotFound", err)
 	}
 }
 
 func TestMemoryStoreGetCancelled(t *testing.T) {
-	store := NewMemoryStore([]Metadata{{
+	store := NewMetadataStore([]files.Metadata{{
 		ID:   "file-123",
 		Name: "notes.txt",
 	}})

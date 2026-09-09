@@ -1,4 +1,4 @@
-package blob
+package local
 
 import (
 	"bytes"
@@ -6,12 +6,14 @@ import (
 	"errors"
 	"io"
 	"testing"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/blob"
 )
 
 func TestLocalStoreOpen(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	want := []byte("hello cloud storage")
 	if _, err := store.Put(
@@ -42,9 +44,9 @@ func TestLocalStoreOpen(t *testing.T) {
 }
 
 func TestLocalStoreOpenMissingBlob(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 
 	content, err := store.Open(context.Background(), "missing")
@@ -52,15 +54,15 @@ func TestLocalStoreOpenMissingBlob(t *testing.T) {
 		_ = content.Close()
 		t.Error("Open() content is non-nil after an error")
 	}
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("Open() error = %v, want ErrNotFound", err)
+	if !errors.Is(err, blob.ErrNotFound) {
+		t.Errorf("Open() error = %v, want blob.ErrNotFound", err)
 	}
 }
 
 func TestLocalStoreOpenRejectsInvalidKeys(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	keys := []string{
 		"",
@@ -78,17 +80,17 @@ func TestLocalStoreOpenRejectsInvalidKeys(t *testing.T) {
 				_ = content.Close()
 				t.Error("Open() content is non-nil after an error")
 			}
-			if !errors.Is(err, ErrInvalidKey) {
-				t.Errorf("Open() error = %v, want ErrInvalidKey", err)
+			if !errors.Is(err, blob.ErrInvalidKey) {
+				t.Errorf("Open() error = %v, want blob.ErrInvalidKey", err)
 			}
 		})
 	}
 }
 
 func TestLocalStoreOpenCancelled(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

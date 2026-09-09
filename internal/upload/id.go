@@ -8,7 +8,8 @@ import (
 
 const randomIDBytes = 16
 
-// RandomID returns a filesystem-safe, unpredictable identifier.
+// RandomID returns 16 cryptographically random bytes encoded as 32 lowercase
+// hexadecimal characters. It does not query storage or retry ID collisions.
 func RandomID() (string, error) {
 	bytes := make([]byte, randomIDBytes)
 	if _, err := rand.Read(bytes); err != nil {

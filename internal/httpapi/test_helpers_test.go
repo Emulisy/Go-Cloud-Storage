@@ -8,10 +8,11 @@ import (
 
 	downloadservice "github.com/Emulisy/Go-Cloud-Storage/internal/download"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/storage/memory"
 )
 
 func newTestHandler() http.Handler {
-	store := files.NewMemoryStore([]files.Metadata{{
+	store := memory.NewMetadataStore([]files.Metadata{{
 		ID:       "file-123",
 		Name:     "notes.txt",
 		Size:     128,

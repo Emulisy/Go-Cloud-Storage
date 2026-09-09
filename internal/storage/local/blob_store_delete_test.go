@@ -1,4 +1,4 @@
-package blob
+package local
 
 import (
 	"bytes"
@@ -7,13 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Emulisy/Go-Cloud-Storage/internal/blob"
 )
 
 func TestLocalStoreDeleteRemovesBlob(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewLocalStore(root)
+	store, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	if _, err := store.Put(
 		context.Background(),
@@ -34,21 +36,21 @@ func TestLocalStoreDeleteRemovesBlob(t *testing.T) {
 }
 
 func TestLocalStoreDeleteMissingBlob(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 
 	err = store.Delete(context.Background(), "missing")
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("Delete() error = %v, want ErrNotFound", err)
+	if !errors.Is(err, blob.ErrNotFound) {
+		t.Errorf("Delete() error = %v, want blob.ErrNotFound", err)
 	}
 }
 
 func TestLocalStoreDeleteRejectsInvalidKeys(t *testing.T) {
-	store, err := NewLocalStore(t.TempDir())
+	store, err := NewBlobStore(t.TempDir())
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 
 	keys := []string{
@@ -63,8 +65,8 @@ func TestLocalStoreDeleteRejectsInvalidKeys(t *testing.T) {
 	for _, key := range keys {
 		t.Run(key, func(t *testing.T) {
 			err := store.Delete(context.Background(), key)
-			if !errors.Is(err, ErrInvalidKey) {
-				t.Errorf("Delete() error = %v, want ErrInvalidKey", err)
+			if !errors.Is(err, blob.ErrInvalidKey) {
+				t.Errorf("Delete() error = %v, want blob.ErrInvalidKey", err)
 			}
 		})
 	}
@@ -72,9 +74,9 @@ func TestLocalStoreDeleteRejectsInvalidKeys(t *testing.T) {
 
 func TestLocalStoreDeleteCancelled(t *testing.T) {
 	root := t.TempDir()
-	store, err := NewLocalStore(root)
+	store, err := NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
 	if _, err := store.Put(
 		context.Background(),

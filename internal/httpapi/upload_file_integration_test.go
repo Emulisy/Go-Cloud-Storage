@@ -6,28 +6,31 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/Emulisy/Go-Cloud-Storage/internal/blob"
+	downloadservice "github.com/Emulisy/Go-Cloud-Storage/internal/download"
 	"github.com/Emulisy/Go-Cloud-Storage/internal/files"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/storage/local"
+	"github.com/Emulisy/Go-Cloud-Storage/internal/storage/memory"
 	uploadservice "github.com/Emulisy/Go-Cloud-Storage/internal/upload"
 )
 
-func TestUploadFileIntegrationPersistsMetadataAndContent(t *testing.T) {
+func TestFileUploadMetadataDownloadIntegration(t *testing.T) {
 	root := t.TempDir()
-	blobStore, err := blob.NewLocalStore(root)
+	blobStore, err := local.NewBlobStore(root)
 	if err != nil {
-		t.Fatalf("NewLocalStore() error: %v", err)
+		t.Fatalf("NewBlobStore() error: %v", err)
 	}
-	metadataStore := files.NewMemoryStore(nil)
+	metadataStore := memory.NewMetadataStore(nil)
 	handler := NewHandler(
 		metadataStore,
 		uploadservice.NewService(blobStore, metadataStore),
-		downloaderStub{},
+		downloadservice.NewService(blobStore, metadataStore),
 	)
 	content := []byte("hello cloud storage")
 	request := newMultipartUploadRequest(t, "notes.txt", content)
@@ -78,4 +81,39 @@ func TestUploadFileIntegrationPersistsMetadataAndContent(t *testing.T) {
 	if !bytes.Equal(storedContent, content) {
 		t.Errorf("stored content = %q, want %q", storedContent, content)
 	}
+
+	// The metadata endpoint and downloader must see the same record that the
+	// upload service created through its narrower metadata interface.
+	metadataRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(metadataRecorder, httptest.NewRequest(
+		http.MethodGet, "/files/"+created.ID+"?include_checksum=true", nil,
+	))
+	if metadataRecorder.Code != http.StatusOK {
+		t.Fatalf("metadata status = %d, want %d", metadataRecorder.Code, http.StatusOK)
+	}
+	var retrieved fileMetadataResponse
+	if err := json.Unmarshal(metadataRecorder.Body.Bytes(), &retrieved); err != nil {
+		t.Fatalf("decode retrieved metadata: %v", err)
+	}
+	if retrieved != created {
+		t.Errorf("retrieved metadata = %+v, want %+v", retrieved, created)
+	}
+
+	downloadRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(downloadRecorder, httptest.NewRequest(
+		http.MethodGet, "/files/"+created.ID+"/content", nil,
+	))
+	downloadResponse := downloadRecorder.Result()
+	defer downloadResponse.Body.Close()
+	if downloadResponse.StatusCode != http.StatusOK {
+		t.Fatalf("download status = %d, want %d", downloadResponse.StatusCode, http.StatusOK)
+	}
+	downloaded, err := io.ReadAll(downloadResponse.Body)
+	if err != nil {
+		t.Fatalf("read downloaded content: %v", err)
+	}
+	if !bytes.Equal(downloaded, content) {
+		t.Errorf("downloaded content = %q, want %q", downloaded, content)
+	}
+	assertAttachmentFilename(t, downloadResponse.Header, "notes.txt")
 }
