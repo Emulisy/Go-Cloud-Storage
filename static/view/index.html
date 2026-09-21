@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>goCloudStorage demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
+    main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
+    h1 { margin-top: 0; }
+    form { display: flex; gap: .75rem; align-items: center; }
+    input { flex: 1; min-width: 0; padding: .75rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; }
+    button { padding: .75rem 1rem; border: 0; border-radius: 8px; color: white; background: #245dcc; cursor: pointer; }
+    p { color: #536176; } code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>goCloudStorage</h1>
+    <p>A local demo using temporary files and in-memory metadata.</p>
+
+    <h2>Upload a file</h2>
+    <form action="/file/upload" method="post" enctype="multipart/form-data">
+      <input type="file" name="file" required>
+      <button type="submit">Upload</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upload complete · goCloudStorage</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
+    main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
+    h1 { margin-top: 0; }
+    dl { display: grid; grid-template-columns: 9rem 1fr; gap: .75rem; }
+    dt { font-weight: 700; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    code { overflow-wrap: anywhere; }
+    .actions { display: flex; gap: 1rem; margin-top: 1.5rem; }
+    a { color: #245dcc; }
+    .download { padding: .65rem 1rem; border-radius: 8px; color: white; background: #245dcc; text-decoration: none; }
+    .management { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #dfe5ef; }
+    form { display: flex; gap: .75rem; align-items: center; }
+    input { flex: 1; min-width: 0; padding: .7rem; border: 1px solid #bac5d6; border-radius: 8px; }
+    button { padding: .7rem 1rem; border: 0; border-radius: 8px; color: white; background: #245dcc; cursor: pointer; }
+    button.danger { margin-top: 1rem; background: #b42318; }
+    #status { color: #246b3f; }
+    #error { color: #a21d1d; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Upload complete</h1>
+    <p id="loading">Loading metadata…</p>
+    <p id="error" hidden></p>
+
+    <section id="metadata" hidden>
+      <dl>
+        <dt>Filename</dt><dd id="filename"></dd>
+        <dt>SHA-256</dt><dd><code id="sha256"></code></dd>
+        <dt>Size</dt><dd><span id="size"></span> bytes</dd>
+        <dt>Uploaded</dt><dd id="uploaded"></dd>
+        <dt>Demo location</dt><dd><code id="location"></code></dd>
+      </dl>
+
+      <div class="actions">
+        <a class="download" id="download" href="#">Download file</a>
+        <a href="/file/upload">Upload another file</a>
+      </div>
+
+      <div class="management">
+        <h2>Manage file</h2>
+        <form id="rename-form">
+          <input id="new-name" name="name" aria-label="New filename" required>
+          <button type="submit">Update filename</button>
+        </form>
+        <button class="danger" id="delete" type="button">Delete file</button>
+        <p id="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="deleted" hidden>
+      <p>The file and its in-memory metadata were deleted.</p>
+      <a href="/file/upload">Upload another file</a>
+    </section>
+  </main>
+
+  <script>
+    const loading = document.querySelector("#loading");
+    const error = document.querySelector("#error");
+    const metadata = document.querySelector("#metadata");
+    const deleted = document.querySelector("#deleted");
+    const renameForm = document.querySelector("#rename-form");
+    const newName = document.querySelector("#new-name");
+    const status = document.querySelector("#status");
+    const hash = new URLSearchParams(window.location.search).get("sha256");
+
+    async function loadMetadata() {
+      if (!hash) {
+        throw new Error("The upload hash is missing from the URL.");
+      }
+
+      const response = await fetch(`/file/meta?fileHash=${encodeURIComponent(hash)}`);
+      if (!response.ok) {
+        throw new Error("The uploaded file metadata could not be found.");
+      }
+
+      const file = await response.json();
+      document.querySelector("#filename").textContent = file.FileName;
+      document.querySelector("#sha256").textContent = file.FileSha256;
+      document.querySelector("#size").textContent = file.FileSize;
+      document.querySelector("#uploaded").textContent = new Date(file.UploadAt).toLocaleString();
+      document.querySelector("#location").textContent = file.Location;
+      document.querySelector("#download").href = `/file/download?sha256=${encodeURIComponent(file.FileSha256)}`;
+      newName.value = file.FileName;
+
+      loading.hidden = true;
+      metadata.hidden = false;
+    }
+
+    loadMetadata().catch((cause) => {
+      loading.hidden = true;
+      error.textContent = cause.message;
+      error.hidden = false;
+    });
+
+    renameForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      status.textContent = "Updating…";
+
+      try {
+        const response = await fetch("/file/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ sha256: hash, name: newName.value })
+        });
+        if (!response.ok) {
+          throw new Error((await response.text()).trim() || "Update failed.");
+        }
+
+        const updated = await response.json();
+        document.querySelector("#filename").textContent = updated.FileName;
+        newName.value = updated.FileName;
+        status.textContent = "Filename updated.";
+      } catch (cause) {
+        status.textContent = cause.message;
+      }
+    });
+
+    document.querySelector("#delete").addEventListener("click", async () => {
+      if (!window.confirm("Delete this file? This cannot be undone.")) {
+        return;
+      }
+
+      status.textContent = "Deleting…";
+      try {
+        const response = await fetch(`/file/delete?sha256=${encodeURIComponent(hash)}`, {
+          method: "DELETE"
+        });
+        if (!response.ok) {
+          throw new Error((await response.text()).trim() || "Delete failed.");
+        }
+
+        metadata.hidden = true;
+        deleted.hidden = false;
+      } catch (cause) {
+        status.textContent = cause.message;
+      }
+    });
+  </script>
+</body>
+</html>
