@@ -2,12 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
+	"goCloudStorage/db"
 	"goCloudStorage/meta"
 	"goCloudStorage/util"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -24,6 +25,24 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = w.Write(data)
 	case http.MethodPost:
+		username, err := authenticatedUsername(r)
+		if err != nil {
+			http.Error(w, "please sign in before uploading", http.StatusUnauthorized)
+			return
+		}
+
+		userID, err := db.GetUserID(username)
+		if err != nil {
+			if errors.Is(err, db.ErrInvalidCredentials) {
+				http.Error(w, "please sign in before uploading", http.StatusUnauthorized)
+				return
+			}
+
+			log.Printf("failed to get user ID for upload: %v", err)
+			http.Error(w, "unable to identify user", http.StatusInternalServerError)
+			return
+		}
+
 		// Receive the file from the request.
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -79,8 +98,25 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Record which authenticated user uploaded this file.
+		if err := db.OnUserFileUploadFinish(
+			userID,
+			fileMeta.FileSha256,
+			fileMeta.FileName,
+			fileMeta.FileSize,
+		); err != nil {
+			log.Printf("failed to save user-file relationship: %v", err)
+			if rollbackErr := db.DeleteUploadedFileMeta(fileMeta.FileSha256); rollbackErr != nil {
+				// Preserve the stored content if its database row could not be rolled back.
+				uploadSucceeded = true
+				log.Printf("failed to roll back file metadata: %v", rollbackErr)
+			}
+			http.Error(w, "failed to associate file with user", http.StatusInternalServerError)
+			return
+		}
+
 		uploadSucceeded = true
-		http.Redirect(w, r, "/file/upload/suc?sha256="+url.QueryEscape(fileMeta.FileSha256), http.StatusFound)
+		http.Redirect(w, r, "/file/home", http.StatusSeeOther)
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

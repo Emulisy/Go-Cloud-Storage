@@ -12,6 +12,36 @@ import (
 var ErrUsernameExists = errors.New("username already exists")
 var ErrInvalidCredentials = errors.New("invalid username or password")
 
+// GetUserID returns the database ID for an active user.
+func GetUserID(userName string) (int64, error) {
+	conn := DBConn()
+	if conn == nil {
+		return 0, fmt.Errorf("get user ID: database is not initialized")
+	}
+
+	userName = strings.TrimSpace(userName)
+	if userName == "" || len(userName) > 64 {
+		return 0, ErrInvalidCredentials
+	}
+
+	var userID int64
+	err := conn.QueryRow(`
+		SELECT id
+		FROM tbl_user
+		WHERE user_name = ? AND status = 0
+		LIMIT 1
+	`, userName).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrInvalidCredentials
+		}
+
+		return 0, fmt.Errorf("get user ID: %w", err)
+	}
+
+	return userID, nil
+}
+
 func UserSignUp(userName string, userPwd string) error {
 	conn := DBConn()
 	if conn == nil {

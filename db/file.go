@@ -8,9 +8,9 @@ import (
 // update the file metadata to mysql
 func OnFileUploadFinish(fileSHA string, fileName string, fileSize int64, fileAddr string) error {
 	conn := DBConn()
-    if conn == nil {
-        return fmt.Errorf("insert file metadata: database is not initialized")
-    }
+	if conn == nil {
+		return fmt.Errorf("insert file metadata: database is not initialized")
+	}
 
 	_, err := DBConn().Exec(
 		`INSERT INTO tbl_file
@@ -24,6 +24,21 @@ func OnFileUploadFinish(fileSHA string, fileName string, fileSize int64, fileAdd
 
 	if err != nil {
 		return fmt.Errorf("insert file metadata: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteUploadedFileMeta removes a file row when a later upload step fails.
+func DeleteUploadedFileMeta(fileSHA string) error {
+	conn := DBConn()
+	if conn == nil {
+		return fmt.Errorf("delete file metadata: database is not initialized")
+	}
+
+	_, err := conn.Exec(`DELETE FROM tbl_file WHERE file_sha = ?`, fileSHA)
+	if err != nil {
+		return fmt.Errorf("delete file metadata: %w", err)
 	}
 
 	return nil
