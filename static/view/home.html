@@ -6,7 +6,8 @@
   <title>Home · goCloudStorage</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
+    [hidden] { display: none !important; }
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
     main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
     h1 { margin-top: 0; }
     dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: .8rem; margin: 1.5rem 0; }
@@ -16,6 +17,22 @@
     .actions { display: flex; gap: 1rem; margin-top: 1.5rem; }
     .primary { padding: .65rem 1rem; border-radius: 8px; color: white; background: #245dcc; text-decoration: none; }
     #error { color: #a21d1d; }
+    .files-section { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #dfe5ef; }
+    .files-section h2 { margin-top: 0; }
+    .file-list { list-style: none; padding: 0; margin: 1rem 0; }
+    .file-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid #dfe5ef; }
+    .file-details { min-width: 0; }
+    .file-name { font-weight: 650; overflow-wrap: anywhere; }
+    .file-info { margin: .35rem 0 0; color: #536176; font-size: .9rem; }
+    .file-hash { overflow-wrap: anywhere; }
+    .pager { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
+    .pager button { padding: .55rem .8rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; color: #172033; font: inherit; cursor: pointer; }
+    .pager button:disabled { opacity: .5; cursor: default; }
+    #files-error { color: #a21d1d; }
+    @media (max-width: 560px) {
+      body { margin-top: 1.5rem; }
+      .file-list li { align-items: flex-start; flex-direction: column; }
+    }
   </style>
 </head>
 <body>
@@ -39,12 +56,125 @@
         <a href="/file/signup">Account page</a>
       </div>
     </section>
+
+    <section id="files-section" class="files-section" aria-labelledby="files-heading" hidden>
+      <h2 id="files-heading">Your files</h2>
+      <p id="files-loading" role="status">Loading files…</p>
+      <p id="files-error" role="alert" hidden></p>
+      <p id="files-empty" hidden>You have not uploaded any files yet.</p>
+      <ul id="file-list" class="file-list"></ul>
+      <div id="pager" class="pager" hidden>
+        <button id="previous-page" type="button">Previous</button>
+        <span id="page-label" aria-live="polite"></span>
+        <button id="next-page" type="button">Next</button>
+      </div>
+    </section>
   </main>
 
   <script>
     const loading = document.querySelector("#loading");
     const error = document.querySelector("#error");
     const profile = document.querySelector("#profile");
+    const filesSection = document.querySelector("#files-section");
+    const filesLoading = document.querySelector("#files-loading");
+    const filesError = document.querySelector("#files-error");
+    const filesEmpty = document.querySelector("#files-empty");
+    const fileList = document.querySelector("#file-list");
+    const pager = document.querySelector("#pager");
+    const previousPage = document.querySelector("#previous-page");
+    const nextPage = document.querySelector("#next-page");
+    const pageLabel = document.querySelector("#page-label");
+    const pageSize = 20;
+    let currentPage = 1;
+    let filesBusy = false;
+    let hasNextPage = false;
+
+    function displayDate(value) {
+      if (!value) return "Unknown date";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString();
+    }
+
+    function renderFiles(files) {
+      const items = files.map((file) => {
+        const item = document.createElement("li");
+        const details = document.createElement("div");
+        details.className = "file-details";
+
+        const name = document.createElement("div");
+        name.className = "file-name";
+        name.textContent = file.fileName || "Unnamed file";
+
+        const info = document.createElement("p");
+        info.className = "file-info";
+        info.textContent = `${Number(file.fileSize).toLocaleString()} bytes · Uploaded ${displayDate(file.uploadAt)}`;
+
+        const hash = document.createElement("div");
+        hash.className = "file-info file-hash";
+        hash.textContent = `SHA-256: ${file.fileHash}`;
+
+        const download = document.createElement("a");
+        download.href = `/file/download?${new URLSearchParams({ sha256: file.fileHash })}`;
+        download.textContent = "Download";
+        download.setAttribute("aria-label", `Download ${file.fileName || "file"}`);
+
+        details.append(name, info, hash);
+        item.append(details, download);
+        return item;
+      });
+
+      fileList.replaceChildren(...items);
+      filesEmpty.hidden = files.length !== 0 || currentPage !== 1;
+      pager.hidden = files.length === 0 && currentPage === 1;
+      pageLabel.textContent = `Page ${currentPage}`;
+      previousPage.disabled = currentPage === 1;
+      hasNextPage = files.length === pageSize;
+      nextPage.disabled = !hasNextPage;
+    }
+
+    async function loadFiles(page) {
+      if (filesBusy) return;
+      filesBusy = true;
+      previousPage.disabled = true;
+      nextPage.disabled = true;
+      filesLoading.hidden = false;
+      filesError.hidden = true;
+
+      try {
+        const response = await fetch(`/file/meta?${new URLSearchParams({ page, pageSize })}`, {
+          credentials: "same-origin",
+          cache: "no-store"
+        });
+        if (response.status === 401) {
+          window.location.replace("/file/signup");
+          return;
+        }
+        if (!response.ok) throw new Error("Unable to load your files.");
+
+        const files = await response.json();
+        if (!Array.isArray(files)) throw new Error("The file list has an unexpected format.");
+        if (page > 1 && files.length === 0) {
+          hasNextPage = false;
+          previousPage.disabled = currentPage === 1;
+          nextPage.disabled = true;
+          return;
+        }
+
+        currentPage = page;
+        renderFiles(files);
+      } catch (cause) {
+        filesError.textContent = cause.message;
+        filesError.hidden = false;
+        previousPage.disabled = currentPage === 1;
+        nextPage.disabled = !hasNextPage;
+      } finally {
+        filesBusy = false;
+        filesLoading.hidden = true;
+      }
+    }
+
+    previousPage.addEventListener("click", () => loadFiles(currentPage - 1));
+    nextPage.addEventListener("click", () => loadFiles(currentPage + 1));
 
     async function loadUser() {
       const response = await fetch("/file/user/info", {
@@ -70,6 +200,8 @@
 
       loading.hidden = true;
       profile.hidden = false;
+      filesSection.hidden = false;
+      await loadFiles(1);
     }
 
     loadUser().catch((cause) => {

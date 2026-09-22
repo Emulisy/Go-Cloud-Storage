@@ -8,8 +8,10 @@ import (
 	"goCloudStorage/util"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -141,7 +143,7 @@ func UploadSucHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// GetFileMetaHnadler returns metadata as JSON.
+// GetFileMetaHnadler returns the signed-in user's file metadata as JSON.
 func GetFileMetaHnadler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -149,25 +151,63 @@ func GetFileMetaHnadler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileHash := r.URL.Query().Get("fileHash")
-	if fileHash == "" {
-		http.Error(w, "fileHash is required", http.StatusBadRequest)
+	page := 1
+	if rawPage := r.URL.Query().Get("page"); rawPage != "" {
+		parsedPage, err := strconv.Atoi(rawPage)
+		if err != nil || parsedPage < 1 {
+			http.Error(w, "page must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		page = parsedPage
+	}
+
+	pageSize := 20
+	if rawPageSize := r.URL.Query().Get("pageSize"); rawPageSize != "" {
+		parsedPageSize, err := strconv.Atoi(rawPageSize)
+		if err != nil || parsedPageSize < 1 {
+			http.Error(w, "pageSize must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		pageSize = parsedPageSize
+	}
+	if page-1 > math.MaxInt/pageSize {
+		http.Error(w, "page and pageSize are too large", http.StatusBadRequest)
 		return
 	}
 
-	fileMeta, err := meta.GetFileMetaDB(fileHash)
+	username, err := authenticatedUsername(r)
 	if err != nil {
-		http.Error(w, "File not found", http.StatusNotFound)
+		http.Error(w, "please sign in", http.StatusUnauthorized)
 		return
 	}
 
-	data, err := json.Marshal(fileMeta)
+	userID, err := db.GetUserID(username)
 	if err != nil {
-		http.Error(w, "Failed to encode metadata", http.StatusInternalServerError)
+		if errors.Is(err, db.ErrInvalidCredentials) {
+			http.Error(w, "please sign in", http.StatusUnauthorized)
+			return
+		}
+
+		log.Printf("failed to get user ID for file metadata: %v", err)
+		http.Error(w, "unable to retrieve file metadata", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	files, err := db.QueryUserFileMetas(userID, page, pageSize)
+	if err != nil {
+		log.Printf("failed to query user files: %v", err)
+		http.Error(w, "unable to retrieve file metadata", http.StatusInternalServerError)
+		return
+	}
+
+	data, err := json.Marshal(files)
+	if err != nil {
+		http.Error(w, "unable to encode file metadata", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(data)
 }
 
@@ -292,3 +332,4 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
