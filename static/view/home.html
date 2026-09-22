@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home · goCloudStorage</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
+    main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
+    h1 { margin-top: 0; }
+    dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: .8rem; margin: 1.5rem 0; }
+    dt { font-weight: 700; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    a { color: #245dcc; }
+    .actions { display: flex; gap: 1rem; margin-top: 1.5rem; }
+    .primary { padding: .65rem 1rem; border-radius: 8px; color: white; background: #245dcc; text-decoration: none; }
+    #error { color: #a21d1d; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Your home page</h1>
+    <p id="loading">Loading your account…</p>
+    <p id="error" hidden></p>
+
+    <section id="profile" hidden>
+      <p>Signed in as <strong id="welcome-name"></strong>.</p>
+      <dl>
+        <dt>Username</dt><dd id="username"></dd>
+        <dt>Phone</dt><dd id="phone"></dd>
+        <dt>Email</dt><dd id="email"></dd>
+        <dt>Joined</dt><dd id="signup-at"></dd>
+        <dt>Last active</dt><dd id="last-active"></dd>
+      </dl>
+
+      <div class="actions">
+        <a class="primary" href="/file/upload">Go to file upload</a>
+        <a href="/file/signup">Account page</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const loading = document.querySelector("#loading");
+    const error = document.querySelector("#error");
+    const profile = document.querySelector("#profile");
+
+    async function loadUser() {
+      const response = await fetch("/file/user/info", {
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+
+      if (response.status === 401) {
+        window.location.replace("/file/signup");
+        return;
+      }
+      if (!response.ok) {
+        throw new Error("Unable to load your account information.");
+      }
+
+      const user = await response.json();
+      document.querySelector("#welcome-name").textContent = user.username;
+      document.querySelector("#username").textContent = user.username;
+      document.querySelector("#phone").textContent = user.phone || "Not provided";
+      document.querySelector("#email").textContent = user.email || "Not provided";
+      document.querySelector("#signup-at").textContent = new Date(user.signupAt).toLocaleString();
+      document.querySelector("#last-active").textContent = new Date(user.lastActive).toLocaleString();
+
+      loading.hidden = true;
+      profile.hidden = false;
+    }
+
+    loadUser().catch((cause) => {
+      loading.hidden = true;
+      error.textContent = cause.message;
+      error.hidden = false;
+    });
+  </script>
+</body>
+</html>

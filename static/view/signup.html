@@ -3,13 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Create account · goCloudStorage</title>
+  <title>Account access · goCloudStorage</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
     main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
     h1 { margin-top: 0; }
-    form { display: grid; gap: 1rem; margin-top: 1.5rem; }
+    .intro { color: #536176; }
+    .forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; margin-top: 2rem; }
+    section { min-width: 0; }
+    section + section { padding-left: 2rem; border-left: 1px solid #dfe5ef; }
+    form { display: grid; gap: 1rem; }
     label { display: grid; gap: .4rem; font-weight: 650; }
     input { width: 100%; padding: .75rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; font: inherit; }
     input:focus { border-color: #245dcc; outline: 3px solid rgba(36, 93, 204, .16); }
@@ -17,91 +21,146 @@
     button:disabled { cursor: wait; opacity: .65; }
     a { color: #245dcc; }
     .hint { color: #536176; font-size: .92rem; }
-    .warning { padding: .8rem 1rem; border-radius: 8px; color: #714b00; background: #fff4d8; }
     .status { min-height: 1.5rem; margin-bottom: 0; }
     .status.success { color: #246b3f; }
     .status.error { color: #a21d1d; }
-    .back { margin-top: 1.5rem; }
+    .back { margin-top: 2rem; }
+    @media (max-width: 680px) {
+      body { margin-top: 1.5rem; }
+      .forms { grid-template-columns: 1fr; }
+      section + section { padding: 1.5rem 0 0; border-left: 0; border-top: 1px solid #dfe5ef; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>Create a demo account</h1>
-    <p>Sign up to try the local goCloudStorage demo.</p>
-    <p class="warning"><strong>Demo only:</strong> passwords are not hashed yet. Do not use a real password.</p>
+    <h1>Welcome to goCloudStorage</h1>
+    <p class="intro">Create a demo account or sign in to continue to your home page.</p>
 
-    <form id="signup-form" action="/file/signup" method="post">
-      <label>
-        Username
-        <input
-          type="text"
-          name="userName"
-          minlength="3"
-          maxlength="64"
-          autocomplete="username"
-          required>
-      </label>
+    <div class="forms">
+      <section>
+        <h2>Create account</h2>
+        <form id="signup-form" action="/file/signup" method="post">
+          <label>
+            Username
+            <input id="signup-username" type="text" name="userName" minlength="3" maxlength="64" autocomplete="username" required>
+          </label>
 
-      <label>
-        Password
-        <input
-          type="password"
-          name="userPwd"
-          minlength="5"
-          autocomplete="new-password"
-          required>
-        <span class="hint">Use at least 5 characters for this demo.</span>
-      </label>
+          <label>
+            Password
+            <input type="password" name="userPwd" minlength="5" maxlength="72" autocomplete="new-password" required>
+            <span class="hint">Use between 5 and 72 characters.</span>
+          </label>
 
-      <button id="submit" type="submit">Create account</button>
-    </form>
+          <button id="signup-submit" type="submit">Create account</button>
+        </form>
+        <p id="signup-status" class="status" role="status" aria-live="polite"></p>
+      </section>
 
-    <p id="status" class="status" role="status" aria-live="polite"></p>
+      <section>
+        <h2>Sign in</h2>
+        <form id="signin-form" action="/file/signin" method="post">
+          <label>
+            Username
+            <input id="signin-username" type="text" name="userName" minlength="3" maxlength="64" autocomplete="username" required>
+          </label>
+
+          <label>
+            Password
+            <input id="signin-password" type="password" name="userPwd" minlength="5" maxlength="72" autocomplete="current-password" required>
+          </label>
+
+          <button id="signin-submit" type="submit">Sign in</button>
+        </form>
+        <p id="signin-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+
     <p class="back"><a href="/file/upload">Back to file upload</a></p>
   </main>
 
   <script>
-    const form = document.querySelector("#signup-form");
-    const submit = document.querySelector("#submit");
-    const status = document.querySelector("#status");
+    const signupForm = document.querySelector("#signup-form");
+    const signupSubmit = document.querySelector("#signup-submit");
+    const signupStatus = document.querySelector("#signup-status");
+    const signinForm = document.querySelector("#signin-form");
+    const signinSubmit = document.querySelector("#signin-submit");
+    const signinStatus = document.querySelector("#signin-status");
+    const signinUsername = document.querySelector("#signin-username");
+    const signinPassword = document.querySelector("#signin-password");
 
-    form.addEventListener("submit", async (event) => {
+    signupForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!form.reportValidity()) {
-        return;
-      }
+      if (!signupForm.reportValidity()) return;
 
-      submit.disabled = true;
-      status.className = "status";
-      status.textContent = "Creating account…";
+      const username = document.querySelector("#signup-username").value.trim();
+      signupSubmit.disabled = true;
+      signupStatus.className = "status";
+      signupStatus.textContent = "Creating account…";
 
       try {
-        const response = await fetch(form.action, {
+        const response = await fetch(signupForm.action, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams(new FormData(form))
+          body: new URLSearchParams(new FormData(signupForm))
         });
 
         if (response.status === 201) {
-          form.reset();
-          status.className = "status success";
-          status.textContent = "Account created successfully.";
+          signupForm.reset();
+          signinUsername.value = username;
+          signinPassword.focus();
+          signupStatus.className = "status success";
+          signupStatus.textContent = "Account created. Sign in to continue.";
           return;
         }
 
-        status.className = "status error";
+        signupStatus.className = "status error";
         if (response.status === 400) {
-          status.textContent = "Enter a username of 3–64 characters and a password of at least 5 characters.";
+          signupStatus.textContent = "Enter a username of 3–64 characters and a password of 5–72 characters.";
         } else if (response.status === 409) {
-          status.textContent = "That username already exists.";
+          signupStatus.textContent = "That username already exists.";
         } else {
-          status.textContent = "Unable to create the account. Please try again.";
+          signupStatus.textContent = "Unable to create the account. Please try again.";
         }
       } catch (_) {
-        status.className = "status error";
-        status.textContent = "Unable to reach the server. Please try again.";
+        signupStatus.className = "status error";
+        signupStatus.textContent = "Unable to reach the server. Please try again.";
       } finally {
-        submit.disabled = false;
+        signupSubmit.disabled = false;
+      }
+    });
+
+    signinForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!signinForm.reportValidity()) return;
+
+      signinSubmit.disabled = true;
+      signinStatus.className = "status";
+      signinStatus.textContent = "Signing in…";
+
+      try {
+        const response = await fetch(signinForm.action, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams(new FormData(signinForm))
+        });
+
+        if (response.ok) {
+          window.location.assign("/file/home");
+          return;
+        }
+
+        signinStatus.className = "status error";
+        if (response.status === 400 || response.status === 401) {
+          signinStatus.textContent = "Invalid username or password.";
+        } else {
+          signinStatus.textContent = "Unable to sign in. Please try again.";
+        }
+      } catch (_) {
+        signinStatus.className = "status error";
+        signinStatus.textContent = "Unable to reach the server. Please try again.";
+      } finally {
+        signinSubmit.disabled = false;
       }
     });
   </script>
