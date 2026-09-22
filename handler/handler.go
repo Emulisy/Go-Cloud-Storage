@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"goCloudStorage/db"
 	"goCloudStorage/meta"
 	"goCloudStorage/util"
@@ -64,6 +66,16 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fileMeta.FileSha256 = sha256
+		reused, err := tryFastUpload(userID, fileMeta)
+		if err != nil {
+			log.Printf("failed to reuse uploaded file: %v", err)
+			http.Error(w, "failed to check stored file", http.StatusInternalServerError)
+			return
+		}
+		if reused {
+			http.Redirect(w, r, "/file/home", http.StatusSeeOther)
+			return
+		}
 
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			http.Error(w, "failed to read uploaded file", http.StatusInternalServerError)
@@ -333,3 +345,30 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// tryFastUpload links existing content to the user without storing it again.
+func tryFastUpload(userID int64, fileMeta meta.FileMeta) (bool, error) {
+	storedFile, err := db.GetFileMeta(fileMeta.FileSha256)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("look up stored file: %w", err)
+	}
+
+	if !storedFile.FileAddr.Valid || storedFile.FileAddr.String == "" {
+		return false, fmt.Errorf("stored file has no location")
+	}
+	info, err := os.Stat(storedFile.FileAddr.String)
+	if err != nil {
+		return false, fmt.Errorf("stat stored file: %w", err)
+	}
+	if !info.Mode().IsRegular() || !storedFile.FileSize.Valid || info.Size() != storedFile.FileSize.Int64 {
+		return false, fmt.Errorf("stored file does not match metadata")
+	}
+
+	if err := db.OnUserFileUploadFinish(userID, fileMeta.FileSha256, fileMeta.FileName, info.Size()); err != nil {
+		return false, fmt.Errorf("associate stored file with user: %w", err)
+	}
+
+	return true, nil
+}
