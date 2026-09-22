@@ -2,15 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"goCloudStorage/meta"
+	"goCloudStorage/util"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
-
-	"goCloudStorage/meta"
-	"goCloudStorage/util"
 )
 
 // UploadHandler displays the upload page and accepts file uploads.
@@ -73,7 +73,12 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		meta.UpdateFileMeta(fileMeta)
+		if err := meta.UpdateFileMetaDB(fileMeta); err != nil {
+			log.Printf("failed to save uploaded file metadata: %v", err)
+			http.Error(w, "failed to save file metadata", http.StatusInternalServerError)
+			return
+		}
+
 		uploadSucceeded = true
 		http.Redirect(w, r, "/file/upload/suc?sha256="+url.QueryEscape(fileMeta.FileSha256), http.StatusFound)
 	default:
@@ -114,7 +119,7 @@ func GetFileMetaHnadler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileMeta, err := meta.GetFileMeta(fileHash)
+	fileMeta, err := meta.GetFileMetaDB(fileHash)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
@@ -145,7 +150,7 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fMeta, err := meta.GetFileMeta(filehash)
+	fMeta, err := meta.GetFileMetaDB(filehash)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
@@ -197,14 +202,14 @@ func FileUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currentFM, err := meta.GetFileMeta(fileHash)
+	currentFM, err := meta.GetFileMetaDB(fileHash)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 
 	currentFM.FileName = newFileName
-	meta.UpdateFileMeta(currentFM)
+	meta.UpdateFileMetaDB(currentFM)
 
 	data, err := json.Marshal(currentFM)
 	if err != nil {
@@ -231,7 +236,7 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fm, err := meta.GetFileMeta(fileHash)
+	fm, err := meta.GetFileMetaDB(fileHash)
 	if err != nil {
 		http.Error(w, "File not found", http.StatusNotFound)
 		return

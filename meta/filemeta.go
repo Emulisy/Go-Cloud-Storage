@@ -2,6 +2,7 @@ package meta
 
 import (
 	"errors"
+	"goCloudStorage/db"
 	"sync"
 	"time"
 )
@@ -30,6 +31,16 @@ func UpdateFileMeta(fm FileMeta) {
 	fileMetas[fm.FileSha256] = fm
 }
 
+// updating metadata to mysql
+func UpdateFileMetaDB(fm FileMeta) error {
+	return db.OnFileUploadFinish(
+		fm.FileSha256,
+		fm.FileName,
+		fm.FileSize,
+		fm.Location,
+	)
+}
+
 // GetFileMeta returns file metadata using its SHA-256 digest.
 func GetFileMeta(sha256 string) (FileMeta, error) {
 	fileMetasMu.RLock()
@@ -42,6 +53,22 @@ func GetFileMeta(sha256 string) (FileMeta, error) {
 	}
 
 	return fm, nil
+}
+
+// GetFileMetaDB gets file metadata from MySQL.
+func GetFileMetaDB(sha256 string) (FileMeta, error) {
+	tableFile, err := db.GetFileMeta(sha256)
+	if err != nil {
+		return FileMeta{}, err
+	}
+
+	return FileMeta{
+		FileSha256: tableFile.FileHash,
+		FileName:   tableFile.FileName.String,
+		FileSize:   tableFile.FileSize.Int64,
+		Location:   tableFile.FileAddr.String,
+		UploadAt:   tableFile.CreatedAt.Time,
+	}, nil
 }
 
 // GetAllFileMetas returns a snapshot of all stored file metadata.
