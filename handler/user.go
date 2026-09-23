@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -15,10 +14,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-//user sign up, create new user in tbl_user
+// user sign up, create new user in tbl_user
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case http.MethodGet: 	//get signup page
+	case http.MethodGet: //get signup page
 		data, err := os.ReadFile("static/view/signup.html")
 		if err != nil {
 			http.Error(w, "Can't load signup page", http.StatusInternalServerError)
@@ -29,7 +28,7 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 		return
 
-	case http.MethodPost:	//post sign up info
+	case http.MethodPost: //post sign up info
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "Invalid form data", http.StatusBadRequest)
 			return
@@ -130,7 +129,7 @@ func SigninHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // HomeHandler displays the authenticated user's home page.
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
+func HomeHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -149,20 +148,14 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // UserInfoHandler returns the authenticated user's information as JSON.
-func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
+func UserInfoHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	username, ok := usernameFromContext(r)
-	if !ok {
-		http.Error(w, "Please sign in", http.StatusUnauthorized)
-		return
-	}
-
-	user, err := db.GetUserInfo(username)
+	userInfo, err := db.GetUserInfo(user.Username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "User not found", http.StatusUnauthorized)
@@ -181,11 +174,11 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 		SignupAt   string `json:"signupAt"`
 		LastActive string `json:"lastActive"`
 	}{
-		Username:   user.Username,
-		Phone:      user.Phone,
-		Email:      user.Email,
-		SignupAt:   user.SignupAt,
-		LastActive: user.LastActive,
+		Username:   userInfo.Username,
+		Phone:      userInfo.Phone,
+		Email:      userInfo.Email,
+		SignupAt:   userInfo.SignupAt,
+		LastActive: userInfo.LastActive,
 	}
 
 	w.Header().Set("Cache-Control", "no-store")
@@ -193,37 +186,5 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Encode user info: %v", err)
-	}
-}
-
-func authenticatedUsername(r *http.Request) (string, error) {
-	cookie, err := r.Cookie("access_token")
-	if err != nil {
-		return "", err
-	}
-
-	return auth.VerifyToken(cookie.Value)
-}
-
-type requestContextKey int
-
-const usernameContextKey requestContextKey = iota
-
-func usernameFromContext(r *http.Request) (string, bool) {
-	username, ok := r.Context().Value(usernameContextKey).(string)
-	return username, ok && username != ""
-}
-
-// HTTPInterceptor verifies authentication and adds the username to the request context.
-func HTTPInterceptor(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		username, err := authenticatedUsername(r)
-		if err != nil {
-			http.Redirect(w, r, "/file/signup", http.StatusSeeOther)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), usernameContextKey, username)
-		h(w, r.WithContext(ctx))
 	}
 }

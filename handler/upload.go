@@ -1,10 +1,10 @@
 package handler
 
-
 import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"goCloudStorage/auth"
 	"goCloudStorage/db"
 	"goCloudStorage/meta"
 	"goCloudStorage/util"
@@ -16,22 +16,16 @@ import (
 )
 
 // UploadHandler displays the upload page and accepts file uploads.
-func UploadHandler(w http.ResponseWriter, r *http.Request) {
+func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	switch r.Method {
-	case http.MethodGet:	//get the upload page
+	case http.MethodGet: //get the upload page
 		data, err := os.ReadFile("static/view/index.html")
 		if err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		_, _ = w.Write(data)
-	case http.MethodPost:	//upload a file
-		username, ok := usernameFromContext(r)
-		if !ok {
-			http.Error(w, "please sign in before uploading", http.StatusUnauthorized)
-			return
-		}
-
+	case http.MethodPost: //upload a file
 		// Receive the file from the request.
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -54,7 +48,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		fileMeta.FileSha256 = sha256
 
 		//first try the fast upload
-		reused, err := tryFastUpload(username, fileMeta)
+		reused, err := tryFastUpload(user.Username, fileMeta)
 		if err != nil {
 			log.Printf("failed to reuse uploaded file: %v", err)
 			http.Error(w, "failed to check stored file", http.StatusInternalServerError)
@@ -102,7 +96,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Record which authenticated user uploaded this file.
 		if err := db.OnUserFileUploadFinish(
-			username,
+			user.Username,
 			fileMeta.FileSha256,
 			fileMeta.FileName,
 			fileMeta.FileSize,
@@ -123,24 +117,6 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-// UploadSucHandler reports a successful file upload.
-func UploadSucHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	data, err := os.ReadFile("static/view/success.html")
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(data)
 }
 
 // tryFastUpload links existing content to the user without storing it again.

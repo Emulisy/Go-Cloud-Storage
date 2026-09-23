@@ -2,8 +2,7 @@ package handler
 
 import (
 	"encoding/json"
-	"goCloudStorage/db"
-	"goCloudStorage/meta"
+	"errors"
 	"io"
 	"log"
 	"math"
@@ -11,10 +10,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"goCloudStorage/auth"
+	"goCloudStorage/db"
+	"goCloudStorage/meta"
 )
 
-// GetFileMetaHnadler returns the signed-in user's file metadata as JSON.
-func GetFileMetaHnadler(w http.ResponseWriter, r *http.Request) {
+// GetFileMetaHandler returns the signed-in user's file metadata as JSON.
+func GetFileMetaHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -45,13 +48,7 @@ func GetFileMetaHnadler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username, ok := usernameFromContext(r)
-	if !ok {
-		http.Error(w, "please sign in", http.StatusUnauthorized)
-		return
-	}
-
-	files, err := db.QueryUserFileMetas(username, page, pageSize)
+	files, err := db.QueryUserFileMetas(user.Username, page, pageSize)
 	if err != nil {
 		log.Printf("failed to query user files: %v", err)
 		http.Error(w, "unable to retrieve file metadata", http.StatusInternalServerError)
@@ -70,7 +67,7 @@ func GetFileMetaHnadler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Download the file from cloud
-func DownloadHandler(w http.ResponseWriter, r *http.Request) {
+func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -111,8 +108,8 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// update filename
-func FileUpdateHandler(w http.ResponseWriter, r *http.Request) {
+// FileUpdateHandler renames one user-specific file row.
+func FileUpdateHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -124,39 +121,49 @@ func FileUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileHash := r.Form.Get("sha256")
-	if fileHash == "" {
-		http.Error(w, "Missing SHA-256", http.StatusBadRequest)
+	userFileID, err := strconv.ParseInt(r.Form.Get("id"), 10, 64)
+	if err != nil || userFileID < 1 {
+		http.Error(w, "Invalid user file ID", http.StatusBadRequest)
 		return
 	}
 
 	newFileName := strings.TrimSpace(r.Form.Get("name"))
-	if newFileName == "" {
-		http.Error(w, "Missing new file name", http.StatusBadRequest)
+	if newFileName == "" || len(newFileName) > 255 {
+		http.Error(w, "Invalid new file name", http.StatusBadRequest)
 		return
 	}
 
-	currentFM, err := meta.GetFileMetaDB(fileHash)
-	if err != nil {
-		http.Error(w, "File not found", http.StatusNotFound)
+	if err := db.UpdateUserFileMeta(user.Username, newFileName, userFileID); err != nil {
+		if errors.Is(err, db.ErrUserFileNotFound) {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("failed to rename user file: %v", err)
+		http.Error(w, "Failed to update file name", http.StatusInternalServerError)
 		return
 	}
 
-	currentFM.FileName = newFileName
-	meta.UpdateFileMetaDB(currentFM)
+	response := struct {
+		ID       int64  `json:"id"`
+		FileName string `json:"fileName"`
+	}{
+		ID:       userFileID,
+		FileName: newFileName,
+	}
 
-	data, err := json.Marshal(currentFM)
+	data, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, "Failed to convert metadata", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
 
-func FileDelHandler(w http.ResponseWriter, r *http.Request) {
+func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodDelete {
 		w.Header().Set("Allow", "DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

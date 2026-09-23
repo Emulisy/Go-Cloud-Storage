@@ -25,6 +25,8 @@
     .file-name { font-weight: 650; overflow-wrap: anywhere; }
     .file-info { margin: .35rem 0 0; color: #536176; font-size: .9rem; }
     .file-hash { overflow-wrap: anywhere; }
+    .file-actions { display: flex; align-items: center; gap: .75rem; }
+    .file-actions button { padding: .45rem .7rem; border: 1px solid #bac5d6; border-radius: 7px; background: white; color: #172033; font: inherit; cursor: pointer; }
     .pager { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
     .pager button { padding: .55rem .8rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; color: #172033; font: inherit; cursor: pointer; }
     .pager button:disabled { opacity: .5; cursor: default; }
@@ -118,8 +120,56 @@
         download.textContent = "Download";
         download.setAttribute("aria-label", `Download ${file.fileName || "file"}`);
 
+        const rename = document.createElement("button");
+        rename.type = "button";
+        rename.textContent = "Rename";
+        rename.setAttribute("aria-label", `Rename ${file.fileName || "file"}`);
+        rename.addEventListener("click", async () => {
+          const requestedName = window.prompt("Enter a new file name", file.fileName || "");
+          if (requestedName === null) return;
+
+          const newName = requestedName.trim();
+          if (!newName || newName.length > 255) {
+            filesError.textContent = "File names must contain between 1 and 255 characters.";
+            filesError.hidden = false;
+            return;
+          }
+
+          rename.disabled = true;
+          filesError.hidden = true;
+          try {
+            const response = await fetch("/file/update", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ id: file.id, name: newName })
+            });
+            if (response.status === 401) {
+              window.location.replace("/file/signup");
+              return;
+            }
+            if (response.status === 404) throw new Error("That file is no longer available.");
+            if (!response.ok) throw new Error((await response.text()).trim() || "Unable to rename the file.");
+
+            const updated = await response.json();
+            file.fileName = updated.fileName;
+            name.textContent = updated.fileName;
+            download.setAttribute("aria-label", `Download ${updated.fileName}`);
+            rename.setAttribute("aria-label", `Rename ${updated.fileName}`);
+          } catch (cause) {
+            filesError.textContent = cause.message;
+            filesError.hidden = false;
+          } finally {
+            rename.disabled = false;
+          }
+        });
+
+        const fileActions = document.createElement("div");
+        fileActions.className = "file-actions";
+        fileActions.append(download, rename);
+
         details.append(name, info, hash);
-        item.append(details, download);
+        item.append(details, fileActions);
         return item;
       });
 

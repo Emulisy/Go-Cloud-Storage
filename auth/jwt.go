@@ -3,10 +3,23 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+)
+
+// User is the identity authenticated by RequireAuth.
+type User struct {
+	Username string
+}
+
+// Handler is an HTTP handler that receives an authenticated user.
+type Handler func(
+	w http.ResponseWriter,
+	r *http.Request,
+	user User,
 )
 
 func getSecretKey() ([]byte, error) {
@@ -72,4 +85,33 @@ func VerifyToken(tokenString string) (string, error) {
 	}
 
 	return username, nil
+}
+
+// RequireAuth verifies the access token and passes the authenticated user to next.
+func RequireAuth(next Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("access_token")
+		if err != nil {
+			handleUnauthenticated(w, r)
+			return
+		}
+
+		username, err := VerifyToken(cookie.Value)
+		if err != nil {
+			handleUnauthenticated(w, r)
+			return
+		}
+
+		next(w, r, User{Username: username})
+	}
+}
+
+func handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet &&
+		(r.URL.Path == "/file/home" || r.URL.Path == "/file/upload") {
+		http.Redirect(w, r, "/file/signup", http.StatusSeeOther)
+		return
+	}
+
+	http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 }

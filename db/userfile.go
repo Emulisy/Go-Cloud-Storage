@@ -2,13 +2,17 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"time"
 )
 
+var ErrUserFileNotFound = errors.New("user file not found")
+
 type UserFile struct {
+	ID          int64  `json:"id"`
 	Username    string `json:"username"`
 	FileHash    string `json:"fileHash"`
 	FileName    string `json:"fileName"`
@@ -17,6 +21,7 @@ type UserFile struct {
 	LastUpdated string `json:"lastUpdated"`
 }
 
+// insert user file connection
 func OnUserFileUploadFinish(
 	userName string,
 	fileHash string,
@@ -49,7 +54,6 @@ func OnUserFileUploadFinish(
 		fileSize,
 		userName,
 	)
-
 	if err != nil {
 		return fmt.Errorf("insert user file metadata: %w", err)
 	}
@@ -83,6 +87,7 @@ func QueryUserFileMetas(userName string, page int, pageSize int) ([]UserFile, er
 
 	query := `
 		SELECT
+			f.id,
 			u.user_name,
 			f.file_sha256,
 			f.file_name,
@@ -112,6 +117,7 @@ func QueryUserFileMetas(userName string, page int, pageSize int) ([]UserFile, er
 		var uploadAt, lastUpdated sql.NullTime
 
 		if err := rows.Scan(
+			&file.ID,
 			&file.Username,
 			&file.FileHash,
 			&file.FileName,
@@ -137,4 +143,72 @@ func QueryUserFileMetas(userName string, page int, pageSize int) ([]UserFile, er
 	}
 
 	return files, nil
+}
+
+// UpdateUserFileMeta renames one active user-file row owned by userName.
+func UpdateUserFileMeta(userName string, newFileName string, userFileID int64) error {
+	conn := DBConn()
+	if conn == nil {
+		return fmt.Errorf("rename user file: database is not initialized")
+	}
+
+	userName = strings.TrimSpace(userName)
+	newFileName = strings.TrimSpace(newFileName)
+	if userName == "" || len(userName) > 64 || userFileID < 1 || newFileName == "" || len(newFileName) > 255 {
+		return fmt.Errorf("rename user file: invalid input")
+	}
+
+	//start transaction
+	tx, err := conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin rename user file: %w", err)
+	}
+	defer tx.Rollback()
+
+	//first locate the file if it exist
+	var currentFileName string
+	err = tx.QueryRow(
+		`SELECT file_name
+		 FROM tbl_user_file
+		 WHERE id = ? AND user_name = ? AND status = 0
+		 FOR UPDATE`,
+		userFileID,
+		userName,
+	).Scan(&currentFileName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUserFileNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("find user file to rename: %w", err)
+	}
+
+	//rename file
+	if currentFileName != newFileName {
+		result, err := tx.Exec(
+			`UPDATE tbl_user_file
+				SET file_name = ?
+			 WHERE id = ? AND user_name = ? AND status = 0
+			`,
+			newFileName,
+			userFileID,
+			userName,
+		)
+		if err != nil {
+			return fmt.Errorf("rename user file: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("check renamed user file: %w", err)
+		}
+		if rowsAffected != 1 {
+			return ErrUserFileNotFound
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit renamed user file: %w", err)
+	}
+
+	return nil
 }

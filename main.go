@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/joho/godotenv"
+	"goCloudStorage/auth"
 	"goCloudStorage/db"
 	"goCloudStorage/handler"
 	"log"
 	"net/http"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -21,18 +23,27 @@ func main() {
 
 	defer db.DBConn().Close()
 
-	http.HandleFunc("/file/upload", handler.HTTPInterceptor(handler.UploadHandler))
-	http.HandleFunc("/file/upload/suc", handler.UploadSucHandler)
-	http.HandleFunc("/file/meta", handler.HTTPInterceptor(handler.GetFileMetaHnadler))
-	http.HandleFunc("/file/download", handler.DownloadHandler)
-	http.HandleFunc("/file/update", handler.FileUpdateHandler)
-	http.HandleFunc("/file/delete", handler.FileDelHandler)
-	http.HandleFunc("/file/signup", handler.SignUpHandler)
-	http.HandleFunc("/file/signin", handler.SigninHandler)
-	http.HandleFunc("GET /file/home", handler.HTTPInterceptor(handler.HomeHandler))
-	http.HandleFunc("GET /file/user/info", handler.HTTPInterceptor(handler.UserInfoHandler))
+	registerRoutes(http.DefaultServeMux)
+
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		fmt.Printf("Failed to start server: %s", err.Error())
 	}
+}
+
+func registerRoutes(mux *http.ServeMux) {
+	// Public routes.
+	mux.HandleFunc("GET /file/signup", handler.SignUpHandler)
+	mux.HandleFunc("POST /file/signup", handler.SignUpHandler)
+	mux.HandleFunc("POST /file/signin", handler.SigninHandler)
+
+	// Protected routes.
+	mux.HandleFunc("GET /file/home", auth.RequireAuth(handler.HomeHandler))
+	mux.HandleFunc("GET /file/user/info", auth.RequireAuth(handler.UserInfoHandler))
+	mux.HandleFunc("GET /file/upload", auth.RequireAuth(handler.UploadHandler))
+	mux.HandleFunc("POST /file/upload", auth.RequireAuth(handler.UploadHandler))
+	mux.HandleFunc("GET /file/meta", auth.RequireAuth(handler.GetFileMetaHandler))
+	mux.HandleFunc("GET /file/download", auth.RequireAuth(handler.DownloadHandler))
+	mux.HandleFunc("POST /file/update", auth.RequireAuth(handler.FileUpdateHandler))
+	mux.HandleFunc("DELETE /file/delete", auth.RequireAuth(handler.FileDelHandler))
 }
