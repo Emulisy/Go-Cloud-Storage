@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"mime"
 	"net/http"
 	"os"
 	"strconv"
@@ -48,7 +49,7 @@ func GetFileMetaHandler(w http.ResponseWriter, r *http.Request, user auth.User) 
 		return
 	}
 
-	files, err := db.QueryUserFileMetas(user.Username, page, pageSize)
+	files, err := db.ListUserFiles(user.Username, page, pageSize)
 	if err != nil {
 		log.Printf("failed to query user files: %v", err)
 		http.Error(w, "unable to retrieve file metadata", http.StatusInternalServerError)
@@ -74,20 +75,25 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	filehash := r.URL.Query().Get("sha256")
-
-	if filehash == "" {
-		http.Error(w, "Missing sha256 fielhash", http.StatusBadRequest)
+	userFileID, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || userFileID < 1 {
+		http.Error(w, "Invalid user file ID", http.StatusBadRequest)
 		return
 	}
 
-	fMeta, err := meta.GetFileMetaDB(filehash)
+	download, err := db.GetUserFileDownload(user.Username, userFileID)
 	if err != nil {
-		http.Error(w, "File not found", http.StatusNotFound)
+		if errors.Is(err, db.ErrUserFileNotFound) {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("failed to get user file for download: %v", err)
+		http.Error(w, "Unable to download file", http.StatusInternalServerError)
 		return
 	}
 
-	file, err := os.Open(fMeta.Location)
+	file, err := os.Open(download.FileAddr)
 	if err != nil {
 		http.Error(w, "Can't retreive file from location", http.StatusInternalServerError)
 		return
@@ -96,10 +102,10 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	w.Header().Set(
-		"Content-Disposition",
-		"attachment; filename=\""+fMeta.FileName+"\"",
-	)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(
+		"attachment",
+		map[string]string{"filename": download.FileName},
+	))
 
 	_, err = io.Copy(w, file)
 	if err != nil {
@@ -133,7 +139,7 @@ func FileUpdateHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	if err := db.UpdateUserFileMeta(user.Username, newFileName, userFileID); err != nil {
+	if err := db.RenameUserFile(user.Username, newFileName, userFileID); err != nil {
 		if errors.Is(err, db.ErrUserFileNotFound) {
 			http.Error(w, "File not found", http.StatusNotFound)
 			return

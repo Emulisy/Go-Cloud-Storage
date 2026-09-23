@@ -4,18 +4,10 @@ CREATE TABLE IF NOT EXISTS tbl_file (
 
     file_sha CHAR(64) NOT NULL
         COMMENT 'File SHA-256 hash as 64 hexadecimal characters',
-    file_name VARCHAR(255) NOT NULL
-        COMMENT 'Original client-provided file name',
     file_size BIGINT NOT NULL DEFAULT 0
         COMMENT 'File size in bytes',
     file_addr VARCHAR(1024) NOT NULL
         COMMENT 'Server-side storage location',
-
-    create_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-        COMMENT 'Time the file metadata was created',
-    update_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-        ON UPDATE CURRENT_TIMESTAMP(6)
-        COMMENT 'Time the file metadata was last updated',
 
     status TINYINT NOT NULL DEFAULT 0
         COMMENT 'File status: 0=inactive, 1=active',
@@ -24,7 +16,7 @@ CREATE TABLE IF NOT EXISTS tbl_file (
     UNIQUE KEY idx_file_sha (file_sha),
     KEY idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-  COMMENT='Stored file metadata';
+  COMMENT='Shared stored file content';
 
 
 CREATE TABLE IF NOT EXISTS tbl_user (
@@ -78,7 +70,7 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
         COMMENT 'File size in bytes',
 
     `file_name` VARCHAR(255) NOT NULL
-        COMMENT 'Original file name',
+        COMMENT 'User-specific display and download name',
 
     `upload_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         COMMENT 'File upload time',

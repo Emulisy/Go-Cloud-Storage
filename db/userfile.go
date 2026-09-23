@@ -21,22 +21,57 @@ type UserFile struct {
 	LastUpdated string `json:"lastUpdated"`
 }
 
-// insert user file connection
-func OnUserFileUploadFinish(
-	userName string,
-	fileHash string,
-	fileName string,
-	fileSize int64,
-) error {
+// UserFileDownload contains the user-specific name and shared storage address.
+type UserFileDownload struct {
+	FileName string
+	FileAddr string
+}
+
+// StoredFile describes shared content stored once in tbl_file.
+type StoredFile struct {
+	Hash string
+	Size int64
+	Addr string
+}
+
+// StoreUserFile creates the shared content row when needed and always creates a
+// distinct user-file row. It reports whether the supplied content path was used.
+func StoreUserFile(userName string, fileName string, file StoredFile) (bool, error) {
 	conn := DBConn()
 	if conn == nil {
-		return fmt.Errorf("insert user file: database is not initialized")
+		return false, fmt.Errorf("store user file: database is not initialized")
 	}
 
 	userName = strings.TrimSpace(userName)
-	if userName == "" || len(userName) > 64 {
-		return ErrInvalidCredentials
+	fileName = strings.TrimSpace(fileName)
+	if userName == "" || len(userName) > 64 || fileName == "" || len(fileName) > 255 ||
+		file.Hash == "" || file.Size < 0 || file.Addr == "" {
+		return false, fmt.Errorf("store user file: invalid input")
 	}
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return false, fmt.Errorf("begin storing user file: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(
+		`INSERT INTO tbl_file (file_sha, file_size, file_addr, status)
+		 VALUES (?, ?, ?, 1)
+		 ON DUPLICATE KEY UPDATE file_sha = file_sha`,
+		file.Hash,
+		file.Size,
+		file.Addr,
+	)
+	if err != nil {
+		return false, fmt.Errorf("store shared file: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("check stored shared file: %w", err)
+	}
+	contentCreated := rowsAffected == 1
 
 	query := `
 		INSERT INTO tbl_user_file
@@ -47,30 +82,60 @@ func OnUserFileUploadFinish(
 		LIMIT 1
 	`
 
-	result, err := conn.Exec(
+	result, err = tx.Exec(
 		query,
-		fileHash,
+		file.Hash,
 		fileName,
-		fileSize,
+		file.Size,
 		userName,
 	)
 	if err != nil {
-		return fmt.Errorf("insert user file metadata: %w", err)
+		return false, fmt.Errorf("insert user file metadata: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
+	rowsAffected, err = result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("check inserted user file metadata: %w", err)
+		return false, fmt.Errorf("check inserted user file metadata: %w", err)
 	}
 	if rowsAffected != 1 {
-		return ErrInvalidCredentials
+		return false, ErrInvalidCredentials
 	}
 
-	return nil
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit stored user file: %w", err)
+	}
+
+	return contentCreated, nil
 }
 
-// QueryUserFileMetas returns active file records belonging to one user.
-func QueryUserFileMetas(userName string, page int, pageSize int) ([]UserFile, error) {
+// GetStoredFile looks up active shared content by hash.
+func GetStoredFile(fileHash string) (*StoredFile, error) {
+	conn := DBConn()
+	if conn == nil {
+		return nil, fmt.Errorf("get stored file: database is not initialized")
+	}
+
+	stored := &StoredFile{}
+	err := conn.QueryRow(
+		`SELECT file_sha, file_size, file_addr
+		 FROM tbl_file
+		 WHERE file_sha = ? AND status = 1
+		 LIMIT 1`,
+		fileHash,
+	).Scan(
+		&stored.Hash,
+		&stored.Size,
+		&stored.Addr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get stored file: %w", err)
+	}
+
+	return stored, nil
+}
+
+// ListUserFiles returns active file records belonging to one user.
+func ListUserFiles(userName string, page int, pageSize int) ([]UserFile, error) {
 	if page < 1 || pageSize < 1 || page-1 > math.MaxInt/pageSize {
 		return nil, fmt.Errorf("query user files: invalid page or page size")
 	}
@@ -145,8 +210,47 @@ func QueryUserFileMetas(userName string, page int, pageSize int) ([]UserFile, er
 	return files, nil
 }
 
-// UpdateUserFileMeta renames one active user-file row owned by userName.
-func UpdateUserFileMeta(userName string, newFileName string, userFileID int64) error {
+// GetUserFileDownload returns download details only when userName owns userFileID.
+func GetUserFileDownload(userName string, userFileID int64) (*UserFileDownload, error) {
+	userName = strings.TrimSpace(userName)
+	if userName == "" || len(userName) > 64 || userFileID < 1 {
+		return nil, ErrUserFileNotFound
+	}
+
+	conn := DBConn()
+	if conn == nil {
+		return nil, fmt.Errorf("get user file download: database is not initialized")
+	}
+
+	query := `
+		SELECT uf.file_name, f.file_addr
+		FROM tbl_user_file AS uf
+		INNER JOIN tbl_file AS f
+			ON f.file_sha = uf.file_sha256
+		WHERE uf.id = ?
+			AND uf.user_name = ?
+			AND uf.status = 0
+			AND f.status = 1
+		LIMIT 1
+	`
+
+	download := &UserFileDownload{}
+	err := conn.QueryRow(query, userFileID, userName).Scan(
+		&download.FileName,
+		&download.FileAddr,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserFileNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get user file download: %w", err)
+	}
+
+	return download, nil
+}
+
+// RenameUserFile renames one active user-file row owned by userName.
+func RenameUserFile(userName string, newFileName string, userFileID int64) error {
 	conn := DBConn()
 	if conn == nil {
 		return fmt.Errorf("rename user file: database is not initialized")
@@ -212,3 +316,7 @@ func UpdateUserFileMeta(userName string, newFileName string, userFileID int64) e
 
 	return nil
 }
+
+
+//delete the user file connnection or the real file if there is no connection left
+func DeleteUserFile()

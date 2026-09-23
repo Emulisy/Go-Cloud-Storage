@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"goCloudStorage/auth"
 	"goCloudStorage/db"
-	"goCloudStorage/meta"
 	"goCloudStorage/util"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"time"
 )
 
 // UploadHandler displays the upload page and accepts file uploads.
@@ -35,20 +33,18 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		defer file.Close()
 
 		//construct metadata and caulculate hash
-		fileMeta := meta.FileMeta{
-			FileName: header.Filename,
-			UploadAt: time.Now(),
-		}
+		storedFile := db.StoredFile{}
+		originalFileName := header.Filename
 
 		sha256, err := util.CalculateSHA256(file)
 		if err != nil {
 			http.Error(w, "failed to hash uploaded file", http.StatusInternalServerError)
 			return
 		}
-		fileMeta.FileSha256 = sha256
+		storedFile.Hash = sha256
 
 		//first try the fast upload
-		reused, err := tryFastUpload(user.Username, fileMeta)
+		reused, err := tryFastUpload(user.Username, originalFileName, storedFile.Hash)
 		if err != nil {
 			log.Printf("failed to reuse uploaded file: %v", err)
 			http.Error(w, "failed to check stored file", http.StatusInternalServerError)
@@ -69,16 +65,16 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 			http.Error(w, "failed to store uploaded file", http.StatusInternalServerError)
 			return
 		}
-		fileMeta.Location = newFile.Name()
+		storedFile.Addr = newFile.Name()
 		uploadSucceeded := false
 		defer func() {
 			if !uploadSucceeded {
 				_ = newFile.Close()
-				_ = os.Remove(fileMeta.Location)
+				_ = os.Remove(storedFile.Addr)
 			}
 		}()
 
-		fileMeta.FileSize, err = io.Copy(newFile, file)
+		storedFile.Size, err = io.Copy(newFile, file)
 		if err != nil {
 			http.Error(w, "failed to store uploaded file", http.StatusInternalServerError)
 			return
@@ -88,30 +84,20 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 			return
 		}
 
-		if err := meta.UpdateFileMetaDB(fileMeta); err != nil {
-			log.Printf("failed to save uploaded file metadata: %v", err)
-			http.Error(w, "failed to save file metadata", http.StatusInternalServerError)
-			return
-		}
-
-		// Record which authenticated user uploaded this file.
-		if err := db.OnUserFileUploadFinish(
+		contentCreated, err := db.StoreUserFile(
 			user.Username,
-			fileMeta.FileSha256,
-			fileMeta.FileName,
-			fileMeta.FileSize,
-		); err != nil {
-			log.Printf("failed to save user-file relationship: %v", err)
-			if rollbackErr := db.DeleteUploadedFileMeta(fileMeta.FileSha256); rollbackErr != nil {
-				// Preserve the stored content if its database row could not be rolled back.
-				uploadSucceeded = true
-				log.Printf("failed to roll back file metadata: %v", rollbackErr)
-			}
-			http.Error(w, "failed to associate file with user", http.StatusInternalServerError)
+			originalFileName,
+			storedFile,
+		)
+		if err != nil {
+			log.Printf("failed to store user file: %v", err)
+			http.Error(w, "failed to save uploaded file", http.StatusInternalServerError)
 			return
 		}
 
-		uploadSucceeded = true
+		// A concurrent upload may have created the shared row first. In that case,
+		// this request's temporary file is redundant and the deferred cleanup removes it.
+		uploadSucceeded = contentCreated
 		http.Redirect(w, r, "/file/home", http.StatusSeeOther)
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -120,8 +106,8 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 }
 
 // tryFastUpload links existing content to the user without storing it again.
-func tryFastUpload(username string, fileMeta meta.FileMeta) (bool, error) {
-	storedFile, err := db.GetFileMeta(fileMeta.FileSha256)
+func tryFastUpload(username string, originalFileName string, fileHash string) (bool, error) {
+	storedFile, err := db.GetStoredFile(fileHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -129,18 +115,18 @@ func tryFastUpload(username string, fileMeta meta.FileMeta) (bool, error) {
 		return false, fmt.Errorf("look up stored file: %w", err)
 	}
 
-	if !storedFile.FileAddr.Valid || storedFile.FileAddr.String == "" {
+	if storedFile.Addr == "" {
 		return false, fmt.Errorf("stored file has no location")
 	}
-	info, err := os.Stat(storedFile.FileAddr.String)
+	info, err := os.Stat(storedFile.Addr)
 	if err != nil {
 		return false, fmt.Errorf("stat stored file: %w", err)
 	}
-	if !info.Mode().IsRegular() || !storedFile.FileSize.Valid || info.Size() != storedFile.FileSize.Int64 {
+	if !info.Mode().IsRegular() || info.Size() != storedFile.Size {
 		return false, fmt.Errorf("stored file does not match metadata")
 	}
 
-	if err := db.OnUserFileUploadFinish(username, fileMeta.FileSha256, fileMeta.FileName, info.Size()); err != nil {
+	if _, err := db.StoreUserFile(username, originalFileName, *storedFile); err != nil {
 		return false, fmt.Errorf("associate stored file with user: %w", err)
 	}
 

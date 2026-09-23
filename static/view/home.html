@@ -116,7 +116,7 @@
         hash.textContent = `SHA-256: ${file.fileHash}`;
 
         const download = document.createElement("a");
-        download.href = `/file/download?${new URLSearchParams({ sha256: file.fileHash })}`;
+        download.href = `/file/download?${new URLSearchParams({ id: file.id })}`;
         download.textContent = "Download";
         download.setAttribute("aria-label", `Download ${file.fileName || "file"}`);
 
