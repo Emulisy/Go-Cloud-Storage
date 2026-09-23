@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"goCloudStorage/auth"
+	"goCloudStorage/cache"
 	"goCloudStorage/db"
 	"goCloudStorage/handler"
 	"log"
@@ -22,6 +23,11 @@ func main() {
 	}
 
 	defer db.DBConn().Close()
+
+	if err := cache.InitRedis(); err != nil {
+		log.Fatal(err)
+	}
+	defer cache.CloseRedis()
 
 	registerRoutes(http.DefaultServeMux)
 
