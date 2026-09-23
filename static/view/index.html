@@ -17,15 +17,85 @@
 <body>
   <main>
     <h1>goCloudStorage</h1>
-    <p>A local demo using temporary files and in-memory metadata.</p>
+    <p>Files larger than 100 MiB are uploaded in 5 MiB parts.</p>
 
     <h2>Upload a file</h2>
     <form action="/file/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="file" required>
       <button type="submit">Upload</button>
     </form>
+    <progress id="upload-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
+    <p id="upload-status" role="status" aria-live="polite"></p>
 
     <p><a href="/file/signup">Create a demo account</a></p>
   </main>
+  <script>
+    const form = document.querySelector("form");
+    const input = form.querySelector('input[type="file"]');
+    const button = form.querySelector("button");
+    const progress = document.querySelector("#upload-progress");
+    const status = document.querySelector("#upload-status");
+    const multipartThreshold = 100 * 1024 * 1024;
+
+    async function uploadRequest(url, body) {
+      const response = await fetch(url, {
+        method: "POST",
+        credentials: "same-origin",
+        body
+      });
+      if (response.status === 401) {
+        window.location.assign("/file/signup");
+        throw new Error("Please sign in again.");
+      }
+      if (!response.ok) {
+        throw new Error((await response.text()).trim() || "Upload failed.");
+      }
+      return response.json();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      const file = input.files[0];
+      if (!file || file.size <= multipartThreshold) return;
+      event.preventDefault();
+      button.disabled = true;
+      input.disabled = true;
+      progress.hidden = false;
+      progress.value = 0;
+
+      try {
+        status.textContent = "Calculating file checksum…";
+        const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+        const hash = Array.from(new Uint8Array(digest), byte =>
+          byte.toString(16).padStart(2, "0")
+        ).join("");
+        const upload = await uploadRequest("/file/upload/init", new URLSearchParams({
+          filehash: hash,
+          filesize: String(file.size)
+        }));
+
+        for (let index = 0; index < upload.chunkCount; index++) {
+          status.textContent = `Uploading part ${index + 1} of ${upload.chunkCount}…`;
+          const start = index * upload.chunkSize;
+          const chunk = file.slice(start, Math.min(start + upload.chunkSize, file.size), "application/octet-stream");
+          await uploadRequest(`/file/upload/part?${new URLSearchParams({
+            uploadid: upload.uploadId, index: String(index)
+          })}`, chunk);
+          progress.value = Math.round(Math.min(start + chunk.size, file.size) / file.size * 100);
+        }
+
+        status.textContent = "Verifying and saving your file…";
+        await uploadRequest("/file/upload/complete", new URLSearchParams({
+          uploadid: upload.uploadId,
+          filename: file.name
+        }));
+        window.location.assign("/file/home");
+      } catch (error) {
+        status.textContent = error.message + " Select Upload to try again.";
+      } finally {
+        button.disabled = false;
+        input.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>
