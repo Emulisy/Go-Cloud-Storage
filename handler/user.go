@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,9 +15,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+//user sign up, create new user in tbl_user
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case http.MethodGet:
+	case http.MethodGet: 	//get signup page
 		data, err := os.ReadFile("static/view/signup.html")
 		if err != nil {
 			http.Error(w, "Can't load signup page", http.StatusInternalServerError)
@@ -27,7 +29,7 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 		return
 
-	case http.MethodPost:
+	case http.MethodPost:	//post sign up info
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "Invalid form data", http.StatusBadRequest)
 			return
@@ -135,11 +137,6 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := authenticatedUsername(r); err != nil {
-		http.Redirect(w, r, "/file/signup", http.StatusSeeOther)
-		return
-	}
-
 	data, err := os.ReadFile("static/view/home.html")
 	if err != nil {
 		http.Error(w, "Unable to load home page", http.StatusInternalServerError)
@@ -159,8 +156,8 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username, err := authenticatedUsername(r)
-	if err != nil {
+	username, ok := usernameFromContext(r)
+	if !ok {
 		http.Error(w, "Please sign in", http.StatusUnauthorized)
 		return
 	}
@@ -206,4 +203,27 @@ func authenticatedUsername(r *http.Request) (string, error) {
 	}
 
 	return auth.VerifyToken(cookie.Value)
+}
+
+type requestContextKey int
+
+const usernameContextKey requestContextKey = iota
+
+func usernameFromContext(r *http.Request) (string, bool) {
+	username, ok := r.Context().Value(usernameContextKey).(string)
+	return username, ok && username != ""
+}
+
+// HTTPInterceptor verifies authentication and adds the username to the request context.
+func HTTPInterceptor(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		username, err := authenticatedUsername(r)
+		if err != nil {
+			http.Redirect(w, r, "/file/signup", http.StatusSeeOther)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), usernameContextKey, username)
+		h(w, r.WithContext(ctx))
+	}
 }

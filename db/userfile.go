@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -17,7 +18,7 @@ type UserFile struct {
 }
 
 func OnUserFileUploadFinish(
-	userID int64,
+	userName string,
 	fileHash string,
 	fileName string,
 	fileSize int64,
@@ -27,33 +28,45 @@ func OnUserFileUploadFinish(
 		return fmt.Errorf("insert user file: database is not initialized")
 	}
 
-	if userID <= 0 {
+	userName = strings.TrimSpace(userName)
+	if userName == "" || len(userName) > 64 {
 		return ErrInvalidCredentials
 	}
 
 	query := `
 		INSERT INTO tbl_user_file
-			(user_id, file_sha256, file_name, file_size, status)
-		VALUES (?, ?, ?, ?, 0)
+			(user_name, file_sha256, file_name, file_size, status)
+		SELECT user_name, ?, ?, ?, 0
+		FROM tbl_user
+		WHERE user_name = ? AND status = 0
+		LIMIT 1
 	`
 
-	_, err := conn.Exec(
+	result, err := conn.Exec(
 		query,
-		userID,
 		fileHash,
 		fileName,
 		fileSize,
+		userName,
 	)
 
 	if err != nil {
 		return fmt.Errorf("insert user file metadata: %w", err)
 	}
 
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check inserted user file metadata: %w", err)
+	}
+	if rowsAffected != 1 {
+		return ErrInvalidCredentials
+	}
+
 	return nil
 }
 
 // QueryUserFileMetas returns active file records belonging to one user.
-func QueryUserFileMetas(userID int64, page int, pageSize int) ([]UserFile, error) {
+func QueryUserFileMetas(userName string, page int, pageSize int) ([]UserFile, error) {
 	if page < 1 || pageSize < 1 || page-1 > math.MaxInt/pageSize {
 		return nil, fmt.Errorf("query user files: invalid page or page size")
 	}
@@ -63,7 +76,8 @@ func QueryUserFileMetas(userID int64, page int, pageSize int) ([]UserFile, error
 		return nil, fmt.Errorf("query user files: database is not initialized")
 	}
 
-	if userID <= 0 {
+	userName = strings.TrimSpace(userName)
+	if userName == "" || len(userName) > 64 {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -77,15 +91,15 @@ func QueryUserFileMetas(userID int64, page int, pageSize int) ([]UserFile, error
 			f.last_update
 		FROM tbl_user_file AS f
 		INNER JOIN tbl_user AS u
-			ON f.user_id = u.id
-		WHERE f.user_id = ?
+			ON f.user_name = u.user_name
+		WHERE f.user_name = ?
 			AND f.status = 0
 			AND u.status = 0
 		ORDER BY f.upload_at DESC, f.id DESC
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := conn.Query(query, userID, pageSize, (page-1)*pageSize)
+	rows, err := conn.Query(query, userName, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("query user files: %w", err)
 	}

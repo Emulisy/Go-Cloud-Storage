@@ -68,8 +68,8 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT
         COMMENT 'Internal user-file relationship identifier',
 
-    `user_id` BIGINT UNSIGNED NOT NULL
-        COMMENT 'User who owns the file relationship',
+    `user_name` VARCHAR(64) NOT NULL
+        COMMENT 'Username that owns the file relationship',
 
     `file_sha256` CHAR(64) NOT NULL
         COMMENT 'File SHA-256 hash as 64 hexadecimal characters',
@@ -80,10 +80,10 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
     `file_name` VARCHAR(255) NOT NULL
         COMMENT 'Original file name',
 
-    `upload_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+    `upload_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         COMMENT 'File upload time',
 
-    `last_update` DATETIME DEFAULT CURRENT_TIMESTAMP
+    `last_update` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP
         COMMENT 'Last modification time',
 
@@ -92,15 +92,23 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
 
     PRIMARY KEY (`id`),
 
-    KEY `idx_user_id` (`user_id`),
+    KEY `idx_user_name` (`user_name`),
 
     KEY `idx_file_sha256` (`file_sha256`),
 
     KEY `idx_status` (`status`),
 
-    CONSTRAINT `fk_file_user`
-        FOREIGN KEY (`user_id`)
-        REFERENCES `tbl_user` (`id`)
+    CONSTRAINT `fk_user_file_owner`
+        FOREIGN KEY (`user_name`)
+        REFERENCES `tbl_user` (`user_name`)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    CONSTRAINT `fk_user_file_content`
+        FOREIGN KEY (`file_sha256`)
+        REFERENCES `tbl_file` (`file_sha`)
+        ON UPDATE RESTRICT
+        ON DELETE RESTRICT
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   COMMENT='Per-user file names and upload metadata';
