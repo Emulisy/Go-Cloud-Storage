@@ -14,7 +14,6 @@ import (
 
 	"goCloudStorage/auth"
 	"goCloudStorage/db"
-	"goCloudStorage/meta"
 )
 
 // GetFileMetaHandler returns the signed-in user's file metadata as JSON.
@@ -176,29 +175,30 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	fileHash := r.URL.Query().Get("sha256")
-
-	if fileHash == "" {
-		http.Error(w, "Missing sha256", http.StatusBadRequest)
+	userFileID, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || userFileID < 1 {
+		http.Error(w, "Invalid user file ID", http.StatusBadRequest)
 		return
 	}
 
-	fm, err := meta.GetFileMetaDB(fileHash)
+	cleanupPath, err := db.DeleteUserFile(user.Username, userFileID)
 	if err != nil {
-		http.Error(w, "File not found", http.StatusNotFound)
+		if errors.Is(err, db.ErrUserFileNotFound) {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("failed to delete user file: %v", err)
+		http.Error(w, "Unable to delete file", http.StatusInternalServerError)
 		return
 	}
 
-	err = os.Remove(fm.Location)
-	if err != nil {
-		http.Error(w, "Failed to delete file", http.StatusInternalServerError)
-		return
-	}
-
-	err = meta.DeleteFileMeta(fileHash)
-	if err != nil {
-		http.Error(w, "Failed to delete metadata", http.StatusInternalServerError)
-		return
+	if cleanupPath != "" {
+		if err := os.Remove(cleanupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			// The database deletion is already committed, so this is an orphaned-file
+			// cleanup failure rather than a failed user deletion.
+			log.Printf("failed to remove unreferenced file %q: %v", cleanupPath, err)
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

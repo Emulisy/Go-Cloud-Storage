@@ -27,6 +27,7 @@
     .file-hash { overflow-wrap: anywhere; }
     .file-actions { display: flex; align-items: center; gap: .75rem; }
     .file-actions button { padding: .45rem .7rem; border: 1px solid #bac5d6; border-radius: 7px; background: white; color: #172033; font: inherit; cursor: pointer; }
+    .file-actions button.danger { border-color: #b42318; color: #b42318; }
     .pager { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
     .pager button { padding: .55rem .8rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; color: #172033; font: inherit; cursor: pointer; }
     .pager button:disabled { opacity: .5; cursor: default; }
@@ -164,9 +165,45 @@
           }
         });
 
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "danger";
+        remove.textContent = "Delete";
+        remove.setAttribute("aria-label", `Delete ${file.fileName || "file"}`);
+        remove.addEventListener("click", async () => {
+          if (!window.confirm(`Delete ${file.fileName || "this file"}?`)) return;
+
+          remove.disabled = true;
+          rename.disabled = true;
+          filesError.hidden = true;
+          try {
+            const response = await fetch(`/file/delete?${new URLSearchParams({ id: file.id })}`, {
+              method: "DELETE",
+              credentials: "same-origin"
+            });
+            if (response.status === 401) {
+              window.location.replace("/file/signup");
+              return;
+            }
+            if (response.status === 404) throw new Error("That file is no longer available.");
+            if (!response.ok) throw new Error((await response.text()).trim() || "Unable to delete the file.");
+
+            const targetPage = currentPage > 1 && fileList.children.length === 1
+              ? currentPage - 1
+              : currentPage;
+            await loadFiles(targetPage);
+          } catch (cause) {
+            filesError.textContent = cause.message;
+            filesError.hidden = false;
+          } finally {
+            remove.disabled = false;
+            rename.disabled = false;
+          }
+        });
+
         const fileActions = document.createElement("div");
         fileActions.className = "file-actions";
-        fileActions.append(download, rename);
+        fileActions.append(download, rename, remove);
 
         details.append(name, info, hash);
         item.append(details, fileActions);

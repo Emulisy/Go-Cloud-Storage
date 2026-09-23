@@ -126,7 +126,10 @@ func tryFastUpload(username string, originalFileName string, fileHash string) (b
 		return false, fmt.Errorf("stored file does not match metadata")
 	}
 
-	if _, err := db.StoreUserFile(username, originalFileName, *storedFile); err != nil {
+	if err := db.LinkUserFile(username, originalFileName, fileHash); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
 		return false, fmt.Errorf("associate stored file with user: %w", err)
 	}
 

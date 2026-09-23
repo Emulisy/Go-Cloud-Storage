@@ -73,6 +73,60 @@ func StoreUserFile(userName string, fileName string, file StoredFile) (bool, err
 	}
 	contentCreated := rowsAffected == 1
 
+	if err := insertUserFile(tx, userName, fileName, file.Hash, file.Size); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit stored user file: %w", err)
+	}
+
+	return contentCreated, nil
+}
+
+// LinkUserFile creates a distinct user-file row for existing shared content.
+func LinkUserFile(userName string, fileName string, fileHash string) error {
+	conn := DBConn()
+	if conn == nil {
+		return fmt.Errorf("link user file: database is not initialized")
+	}
+
+	userName = strings.TrimSpace(userName)
+	fileName = strings.TrimSpace(fileName)
+	if userName == "" || len(userName) > 64 || fileName == "" || len(fileName) > 255 || fileHash == "" {
+		return fmt.Errorf("link user file: invalid input")
+	}
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin linking user file: %w", err)
+	}
+	defer tx.Rollback()
+
+	var fileSize int64
+	err = tx.QueryRow(
+		`SELECT file_size
+		 FROM tbl_file
+		 WHERE file_sha = ? AND status = 1
+		 FOR UPDATE`,
+		fileHash,
+	).Scan(&fileSize)
+	if err != nil {
+		return fmt.Errorf("find shared file to link: %w", err)
+	}
+
+	if err := insertUserFile(tx, userName, fileName, fileHash, fileSize); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit linked user file: %w", err)
+	}
+
+	return nil
+}
+
+func insertUserFile(tx *sql.Tx, userName string, fileName string, fileHash string, fileSize int64) error {
 	query := `
 		INSERT INTO tbl_user_file
 			(user_name, file_sha256, file_name, file_size, status)
@@ -82,30 +136,26 @@ func StoreUserFile(userName string, fileName string, file StoredFile) (bool, err
 		LIMIT 1
 	`
 
-	result, err = tx.Exec(
+	result, err := tx.Exec(
 		query,
-		file.Hash,
+		fileHash,
 		fileName,
-		file.Size,
+		fileSize,
 		userName,
 	)
 	if err != nil {
-		return false, fmt.Errorf("insert user file metadata: %w", err)
+		return fmt.Errorf("insert user file metadata: %w", err)
 	}
 
-	rowsAffected, err = result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("check inserted user file metadata: %w", err)
+		return fmt.Errorf("check inserted user file metadata: %w", err)
 	}
 	if rowsAffected != 1 {
-		return false, ErrInvalidCredentials
+		return ErrInvalidCredentials
 	}
 
-	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("commit stored user file: %w", err)
-	}
-
-	return contentCreated, nil
+	return nil
 }
 
 // GetStoredFile looks up active shared content by hash.
@@ -249,6 +299,100 @@ func GetUserFileDownload(userName string, userFileID int64) (*UserFileDownload, 
 	return download, nil
 }
 
+// DeleteUserFile removes one owned user-file row. If it was the final reference,
+// it also removes the shared database row and returns its physical path for cleanup.
+func DeleteUserFile(userName string, userFileID int64) (string, error) {
+	userName = strings.TrimSpace(userName)
+	if userName == "" || len(userName) > 64 || userFileID < 1 {
+		return "", ErrUserFileNotFound
+	}
+
+	conn := DBConn()
+	if conn == nil {
+		return "", fmt.Errorf("delete user file: database is not initialized")
+	}
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin deleting user file: %w", err)
+	}
+	defer tx.Rollback()
+
+	var fileHash string
+	err = tx.QueryRow(
+		`SELECT file_sha256
+		 FROM tbl_user_file
+		 WHERE id = ? AND user_name = ? AND status = 0
+		 FOR UPDATE`,
+		userFileID,
+		userName,
+	).Scan(&fileHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrUserFileNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("find user file to delete: %w", err)
+	}
+
+	var fileAddr string
+	err = tx.QueryRow(
+		`SELECT file_addr
+		 FROM tbl_file
+		 WHERE file_sha = ? AND status = 1
+		 FOR UPDATE`,
+		fileHash,
+	).Scan(&fileAddr)
+	if err != nil {
+		return "", fmt.Errorf("find shared file to delete: %w", err)
+	}
+
+	result, err := tx.Exec(
+		`DELETE FROM tbl_user_file WHERE id = ? AND user_name = ?`,
+		userFileID,
+		userName,
+	)
+	if err != nil {
+		return "", fmt.Errorf("delete user file row: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("check deleted user file row: %w", err)
+	}
+	if rowsAffected != 1 {
+		return "", ErrUserFileNotFound
+	}
+
+	var referenceCount int
+	if err := tx.QueryRow(
+		`SELECT COUNT(*) FROM tbl_user_file WHERE file_sha256 = ?`,
+		fileHash,
+	).Scan(&referenceCount); err != nil {
+		return "", fmt.Errorf("count shared file references: %w", err)
+	}
+
+	cleanupPath := ""
+	if referenceCount == 0 {
+		result, err = tx.Exec(`DELETE FROM tbl_file WHERE file_sha = ?`, fileHash)
+		if err != nil {
+			return "", fmt.Errorf("delete shared file row: %w", err)
+		}
+		rowsAffected, err = result.RowsAffected()
+		if err != nil {
+			return "", fmt.Errorf("check deleted shared file row: %w", err)
+		}
+		if rowsAffected != 1 {
+			return "", fmt.Errorf("delete shared file row: unexpected row count %d", rowsAffected)
+		}
+		cleanupPath = fileAddr
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit deleted user file: %w", err)
+	}
+
+	return cleanupPath, nil
+}
+
 // RenameUserFile renames one active user-file row owned by userName.
 func RenameUserFile(userName string, newFileName string, userFileID int64) error {
 	conn := DBConn()
@@ -316,7 +460,3 @@ func RenameUserFile(userName string, newFileName string, userFileID int64) error
 
 	return nil
 }
-
-
-//delete the user file connnection or the real file if there is no connection left
-func DeleteUserFile()
