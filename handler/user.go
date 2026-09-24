@@ -112,6 +112,37 @@ func UpdateUserEmailHandler(w http.ResponseWriter, r *http.Request, user auth.Us
 	_, _ = w.Write([]byte("SUCCESS"))
 }
 
+//sign out, clear the cookie return nothing
+func SignOutHandler(
+    w http.ResponseWriter,
+    r *http.Request,
+) {
+    // 1. Check HTTP method.
+    if r.Method != http.MethodPost {
+        w.Header().Set("Allow", "POST")
+        http.Error(
+            w,
+            "Method not allowed",
+            http.StatusMethodNotAllowed,
+        )
+        return
+    }
+
+    // 2. Clear the authentication cookie.
+    http.SetCookie(w, &http.Cookie{
+        Name:     "access_token",
+        Value:    "",
+        Path:     "/",
+        MaxAge:   -1,
+        HttpOnly: true,
+        Secure:   true,
+        SameSite: http.SameSiteLaxMode,
+    })
+
+    // 3. Return success.
+    w.WriteHeader(http.StatusNoContent)
+}
+
 // user sign up, create new user in tbl_user
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

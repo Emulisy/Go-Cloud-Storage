@@ -39,11 +39,16 @@ func main() {
 
 func registerRoutes(mux *http.ServeMux) {
 	// Public routes.
+	mux.HandleFunc("GET /{$}", handler.LandingHandler)
+	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("static/assets"))))
+	mux.HandleFunc("GET /file/signin", handler.LoginPageHandler)
 	mux.HandleFunc("GET /file/signup", handler.SignUpHandler)
 	mux.HandleFunc("POST /api/users", handler.SignUpHandler)
 	mux.HandleFunc("POST /api/sessions", handler.SigninHandler)
+	mux.HandleFunc("POST /api/sessions/signout", handler.SignOutHandler)
 
 	// Protected routes.
+	mux.HandleFunc("GET /file/account", auth.RequireAuth(handler.AccountPageHandler))
 	mux.HandleFunc("GET /file/home", auth.RequireAuth(handler.HomeHandler))
 	mux.HandleFunc("GET /api/users/me", auth.RequireAuth(handler.UserInfoHandler))
 	mux.HandleFunc("PATCH /api/users/me/name", auth.RequireAuth(handler.UpdateUserNameHandler))

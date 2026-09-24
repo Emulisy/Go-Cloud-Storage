@@ -99,26 +99,24 @@ func RequireAuth(next Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("access_token")
 		if err != nil {
-			handleUnauthenticated(w, r)
+			http.Error(
+				w,
+				http.StatusText(http.StatusUnauthorized),
+				http.StatusUnauthorized,
+			)
 			return
 		}
 
 		userID, err := VerifyToken(cookie.Value)
 		if err != nil {
-			handleUnauthenticated(w, r)
+			http.Error(
+				w,
+				http.StatusText(http.StatusUnauthorized),
+				http.StatusUnauthorized,
+			)
 			return
 		}
 
 		next(w, r, User{UserID: userID})
 	}
-}
-
-func handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet &&
-		(r.URL.Path == "/file/home" || r.URL.Path == "/file/upload") {
-		http.Redirect(w, r, "/file/signup", http.StatusSeeOther)
-		return
-	}
-
-	http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 }
