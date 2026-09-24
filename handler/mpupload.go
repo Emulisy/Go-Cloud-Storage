@@ -38,7 +38,21 @@ func InitialMPUploadHandler(
 		return
 	}
 
-	fileHash := strings.TrimSpace(r.PostForm.Get("filehash"))
+	fileHash := strings.ToLower(
+		strings.TrimSpace(r.PostForm.Get("filehash")),
+	)
+
+	if len(fileHash) != 64 {
+		http.Error(w, "Invalid SHA-256 hash", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := hex.DecodeString(fileHash); err != nil {
+		http.Error(w, "Invalid SHA-256 hash", http.StatusBadRequest)
+		return
+	}
+
+
 	fileName := strings.TrimSpace(r.PostForm.Get("filename"))
 
 	fileSize, err := strconv.ParseInt(
@@ -67,6 +81,112 @@ func InitialMPUploadHandler(
 	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
 
 	//Check if there is existing upload session for the file
+	existingSession, err := redisClient.HGetAll(
+		r.Context(),
+		sessionKey,
+	).Result()
+
+	if err != nil {
+		http.Error(
+			w,
+			"Unable to retrieve upload session",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	//if found existing session
+	if len(existingSession) > 0 {
+
+		// Verify that the existing session matches the requested file.
+		if existingSession["username"] != user.Username ||
+			existingSession["file_hash"] != fileHash ||
+			existingSession["file_size"] != strconv.FormatInt(fileSize, 10) {
+
+			http.Error(
+				w,
+				"Existing upload session does not match",
+				http.StatusConflict,
+			)
+			return
+		}
+
+		if existingSession["status"] != "uploading" {
+			http.Error(
+				w,
+				"Upload session is not active",
+				http.StatusConflict,
+			)
+			return
+		}
+
+		// Retrieve the original chunk configuration.
+		existingChunkSize, err := strconv.ParseInt(
+			existingSession["chunk_size"],
+			10,
+			64,
+		)
+
+		if err != nil || existingChunkSize <= 0 {
+			http.Error(
+				w,
+				"Invalid stored chunk size",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		existingChunkCount, err := strconv.ParseInt(
+			existingSession["chunk_count"],
+			10,
+			64,
+		)
+
+		if err != nil ||
+			existingChunkCount != (fileSize-1)/existingChunkSize+1 {
+
+			http.Error(
+				w,
+				"Invalid stored chunk count",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		createdAt, err := time.Parse(
+			time.RFC3339Nano,
+			existingSession["created_at"],
+		)
+
+		if err != nil {
+			http.Error(
+				w,
+				"Invalid stored creation time",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		// Return the original session.
+		info := cache.MPUploadInfo{
+			FileHash:   fileHash,
+			FileSize:   fileSize,
+			FileName:   existingSession["file_name"],
+			UploadID:   sessionKey,
+			ChunkSize:  existingChunkSize,
+			ChunkCount: existingChunkCount,
+			Status:     "uploading",
+			CreatedAt:  createdAt,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err := json.NewEncoder(w).Encode(info); err != nil {
+			log.Printf("Encode existing upload session: %v", err)
+		}
+
+		return
+	}
 
 	// 4. Calculate chunk information.
 	const chunkSize int64 = 5 * 1024 * 1024 // 5 MiB
@@ -498,4 +618,124 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	}); err != nil {
 		log.Printf("Encode upload result: %v", err)
 	}
+}
+
+//check the upload status
+func UploadStatusHandler(
+    w http.ResponseWriter,
+    r *http.Request,
+    user auth.User,
+) {
+	if r.Method != http.MethodGet {
+        w.Header().Set("Allow", "GET")
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    // 1. Read and validate the file hash.
+    fileHash := strings.ToLower(
+        strings.TrimSpace(r.URL.Query().Get("filehash")),
+    )
+
+    if len(fileHash) != 64 {
+        http.Error(w, "Invalid file hash", http.StatusBadRequest)
+        return
+    }
+
+    if _, err := hex.DecodeString(fileHash); err != nil {
+        http.Error(w, "Invalid file hash", http.StatusBadRequest)
+        return
+    }
+
+    // 2. Get the Redis client.
+    redisClient := cache.RedisClient()
+
+    if redisClient == nil {
+        http.Error(w, "Redis is not initialized", http.StatusInternalServerError)
+        return
+    }
+
+    ctx := r.Context()
+
+    sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+
+    chunkKey := "mpupload:chunks:" + user.Username + ":" + fileHash
+
+    // 3. Retrieve the existing upload session.
+    info, err := redisClient.HGetAll(
+        ctx,
+        sessionKey,
+    ).Result()
+
+    if err != nil {
+        http.Error(w, "Unable to retrieve upload session", http.StatusInternalServerError)
+        return
+    }
+
+    if len(info) == 0 ||
+        info["username"] != user.Username ||
+        info["file_hash"] != fileHash {
+
+        http.Error(w, "Upload session not found", http.StatusNotFound)
+        return
+    }
+
+    if info["status"] != "uploading" {
+        http.Error(w, "Upload is not active", http.StatusConflict)
+        return
+    }
+
+    // 4. Retrieve the expected chunk configuration.
+    totalCount, err := strconv.ParseInt(
+        info["chunk_count"],
+        10,
+        64,
+    )
+
+    if err != nil || totalCount <= 0 {
+        http.Error(w, "Invalid upload information", http.StatusInternalServerError)
+        return
+    }
+
+    // 5. Retrieve the uploaded chunk indices.
+    uploadedChunks, err := redisClient.SMembers(
+        ctx,
+        chunkKey,
+    ).Result()
+
+    if err != nil {
+        http.Error(w, "Unable to retrieve uploaded chunks", http.StatusInternalServerError)
+        return
+    }
+
+    // Convert the uploaded indices into a map.
+    uploadedMap := make(map[string]bool)
+
+    for _, chunkIndex := range uploadedChunks {
+        uploadedMap[chunkIndex] = true
+    }
+
+    // 6. Return the indices in ascending order.
+    uploadedIndices := make([]int64, 0)
+
+    for i := int64(0); i < totalCount; i++ {
+
+        chunkIndex := strconv.FormatInt(i, 10)
+
+        if uploadedMap[chunkIndex] {
+            uploadedIndices = append(uploadedIndices, i)
+        }
+    }
+
+    // 7. Return the upload progress.
+    w.Header().Set("Content-Type", "application/json")
+
+    if err := json.NewEncoder(w).Encode(map[string]any{
+        "fileHash":       fileHash,
+        "chunkCount":     totalCount,
+        "uploadedChunks": uploadedIndices,
+        "status":         info["status"],
+    }); err != nil {
+        log.Printf("Encode upload status: %v", err)
+    }
 }
