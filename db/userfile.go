@@ -13,7 +13,7 @@ var ErrUserFileNotFound = errors.New("user file not found")
 
 type UserFile struct {
 	ID          int64  `json:"id"`
-	Username    string `json:"username"`
+	UserID      int64  `json:"userId,string"`
 	FileHash    string `json:"fileHash"`
 	FileName    string `json:"fileName"`
 	FileSize    int64  `json:"fileSize"`
@@ -36,15 +36,14 @@ type StoredFile struct {
 
 // StoreUserFile creates the shared content row when needed and always creates a
 // distinct user-file row. It reports whether the supplied content path was used.
-func StoreUserFile(userName string, fileName string, file StoredFile) (bool, error) {
+func StoreUserFile(userID int64, fileName string, file StoredFile) (bool, error) {
 	conn := DBConn()
 	if conn == nil {
 		return false, fmt.Errorf("store user file: database is not initialized")
 	}
 
-	userName = strings.TrimSpace(userName)
 	fileName = strings.TrimSpace(fileName)
-	if userName == "" || len(userName) > 64 || fileName == "" || len(fileName) > 255 ||
+	if userID < 1 || fileName == "" || len(fileName) > 255 ||
 		file.Hash == "" || file.Size < 0 || file.Addr == "" {
 		return false, fmt.Errorf("store user file: invalid input")
 	}
@@ -73,7 +72,7 @@ func StoreUserFile(userName string, fileName string, file StoredFile) (bool, err
 	}
 	contentCreated := rowsAffected == 1
 
-	if err := insertUserFile(tx, userName, fileName, file.Hash, file.Size); err != nil {
+	if err := insertUserFile(tx, userID, fileName, file.Hash, file.Size); err != nil {
 		return false, err
 	}
 
@@ -85,15 +84,14 @@ func StoreUserFile(userName string, fileName string, file StoredFile) (bool, err
 }
 
 // LinkUserFile creates a distinct user-file row for existing shared content.
-func LinkUserFile(userName string, fileName string, fileHash string) error {
+func LinkUserFile(userID int64, fileName string, fileHash string) error {
 	conn := DBConn()
 	if conn == nil {
 		return fmt.Errorf("link user file: database is not initialized")
 	}
 
-	userName = strings.TrimSpace(userName)
 	fileName = strings.TrimSpace(fileName)
-	if userName == "" || len(userName) > 64 || fileName == "" || len(fileName) > 255 || fileHash == "" {
+	if userID < 1 || fileName == "" || len(fileName) > 255 || fileHash == "" {
 		return fmt.Errorf("link user file: invalid input")
 	}
 
@@ -115,7 +113,7 @@ func LinkUserFile(userName string, fileName string, fileHash string) error {
 		return fmt.Errorf("find shared file to link: %w", err)
 	}
 
-	if err := insertUserFile(tx, userName, fileName, fileHash, fileSize); err != nil {
+	if err := insertUserFile(tx, userID, fileName, fileHash, fileSize); err != nil {
 		return err
 	}
 
@@ -126,13 +124,13 @@ func LinkUserFile(userName string, fileName string, fileHash string) error {
 	return nil
 }
 
-func insertUserFile(tx *sql.Tx, userName string, fileName string, fileHash string, fileSize int64) error {
+func insertUserFile(tx *sql.Tx, userID int64, fileName string, fileHash string, fileSize int64) error {
 	query := `
 		INSERT INTO tbl_user_file
-			(user_name, file_sha256, file_name, file_size, status)
-		SELECT user_name, ?, ?, ?, 0
+			(user_id, file_sha256, file_name, file_size, status)
+		SELECT id, ?, ?, ?, 0
 		FROM tbl_user
-		WHERE user_name = ? AND status = 0
+		WHERE id = ? AND status = 0
 		LIMIT 1
 	`
 
@@ -141,7 +139,7 @@ func insertUserFile(tx *sql.Tx, userName string, fileName string, fileHash strin
 		fileHash,
 		fileName,
 		fileSize,
-		userName,
+		userID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert user file metadata: %w", err)
@@ -185,7 +183,7 @@ func GetStoredFile(fileHash string) (*StoredFile, error) {
 }
 
 // ListUserFiles returns active file records belonging to one user.
-func ListUserFiles(userName string, page int, pageSize int) ([]UserFile, error) {
+func ListUserFiles(userID int64, page int, pageSize int) ([]UserFile, error) {
 	if page < 1 || pageSize < 1 || page-1 > math.MaxInt/pageSize {
 		return nil, fmt.Errorf("query user files: invalid page or page size")
 	}
@@ -195,15 +193,14 @@ func ListUserFiles(userName string, page int, pageSize int) ([]UserFile, error) 
 		return nil, fmt.Errorf("query user files: database is not initialized")
 	}
 
-	userName = strings.TrimSpace(userName)
-	if userName == "" || len(userName) > 64 {
+	if userID < 1 {
 		return nil, ErrInvalidCredentials
 	}
 
 	query := `
 		SELECT
 			f.id,
-			u.user_name,
+			u.id,
 			f.file_sha256,
 			f.file_name,
 			f.file_size,
@@ -211,15 +208,15 @@ func ListUserFiles(userName string, page int, pageSize int) ([]UserFile, error) 
 			f.last_update
 		FROM tbl_user_file AS f
 		INNER JOIN tbl_user AS u
-			ON f.user_name = u.user_name
-		WHERE f.user_name = ?
+			ON f.user_id = u.id
+		WHERE f.user_id = ?
 			AND f.status = 0
 			AND u.status = 0
 		ORDER BY f.upload_at DESC, f.id DESC
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := conn.Query(query, userName, pageSize, (page-1)*pageSize)
+	rows, err := conn.Query(query, userID, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("query user files: %w", err)
 	}
@@ -233,7 +230,7 @@ func ListUserFiles(userName string, page int, pageSize int) ([]UserFile, error) 
 
 		if err := rows.Scan(
 			&file.ID,
-			&file.Username,
+			&file.UserID,
 			&file.FileHash,
 			&file.FileName,
 			&file.FileSize,
@@ -260,10 +257,9 @@ func ListUserFiles(userName string, page int, pageSize int) ([]UserFile, error) 
 	return files, nil
 }
 
-// GetUserFileDownload returns download details only when userName owns userFileID.
-func GetUserFileDownload(userName string, userFileID int64) (*UserFileDownload, error) {
-	userName = strings.TrimSpace(userName)
-	if userName == "" || len(userName) > 64 || userFileID < 1 {
+// GetUserFileDownload returns download details only when userID owns userFileID.
+func GetUserFileDownload(userID int64, userFileID int64) (*UserFileDownload, error) {
+	if userID < 1 || userFileID < 1 {
 		return nil, ErrUserFileNotFound
 	}
 
@@ -278,14 +274,14 @@ func GetUserFileDownload(userName string, userFileID int64) (*UserFileDownload, 
 		INNER JOIN tbl_file AS f
 			ON f.file_sha = uf.file_sha256
 		WHERE uf.id = ?
-			AND uf.user_name = ?
+			AND uf.user_id = ?
 			AND uf.status = 0
 			AND f.status = 1
 		LIMIT 1
 	`
 
 	download := &UserFileDownload{}
-	err := conn.QueryRow(query, userFileID, userName).Scan(
+	err := conn.QueryRow(query, userFileID, userID).Scan(
 		&download.FileName,
 		&download.FileAddr,
 	)
@@ -301,9 +297,8 @@ func GetUserFileDownload(userName string, userFileID int64) (*UserFileDownload, 
 
 // DeleteUserFile removes one owned user-file row. If it was the final reference,
 // it also removes the shared database row and returns its physical path for cleanup.
-func DeleteUserFile(userName string, userFileID int64) (string, error) {
-	userName = strings.TrimSpace(userName)
-	if userName == "" || len(userName) > 64 || userFileID < 1 {
+func DeleteUserFile(userID int64, userFileID int64) (string, error) {
+	if userID < 1 || userFileID < 1 {
 		return "", ErrUserFileNotFound
 	}
 
@@ -322,10 +317,10 @@ func DeleteUserFile(userName string, userFileID int64) (string, error) {
 	err = tx.QueryRow(
 		`SELECT file_sha256
 		 FROM tbl_user_file
-		 WHERE id = ? AND user_name = ? AND status = 0
+		 WHERE id = ? AND user_id = ? AND status = 0
 		 FOR UPDATE`,
 		userFileID,
-		userName,
+		userID,
 	).Scan(&fileHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrUserFileNotFound
@@ -347,9 +342,9 @@ func DeleteUserFile(userName string, userFileID int64) (string, error) {
 	}
 
 	result, err := tx.Exec(
-		`DELETE FROM tbl_user_file WHERE id = ? AND user_name = ?`,
+		`DELETE FROM tbl_user_file WHERE id = ? AND user_id = ?`,
 		userFileID,
-		userName,
+		userID,
 	)
 	if err != nil {
 		return "", fmt.Errorf("delete user file row: %w", err)
@@ -393,16 +388,15 @@ func DeleteUserFile(userName string, userFileID int64) (string, error) {
 	return cleanupPath, nil
 }
 
-// RenameUserFile renames one active user-file row owned by userName.
-func RenameUserFile(userName string, newFileName string, userFileID int64) error {
+// RenameUserFile renames one active user-file row owned by userID.
+func RenameUserFile(userID int64, newFileName string, userFileID int64) error {
 	conn := DBConn()
 	if conn == nil {
 		return fmt.Errorf("rename user file: database is not initialized")
 	}
 
-	userName = strings.TrimSpace(userName)
 	newFileName = strings.TrimSpace(newFileName)
-	if userName == "" || len(userName) > 64 || userFileID < 1 || newFileName == "" || len(newFileName) > 255 {
+	if userID < 1 || userFileID < 1 || newFileName == "" || len(newFileName) > 255 {
 		return fmt.Errorf("rename user file: invalid input")
 	}
 
@@ -418,10 +412,10 @@ func RenameUserFile(userName string, newFileName string, userFileID int64) error
 	err = tx.QueryRow(
 		`SELECT file_name
 		 FROM tbl_user_file
-		 WHERE id = ? AND user_name = ? AND status = 0
+		 WHERE id = ? AND user_id = ? AND status = 0
 		 FOR UPDATE`,
 		userFileID,
-		userName,
+		userID,
 	).Scan(&currentFileName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrUserFileNotFound
@@ -435,11 +429,11 @@ func RenameUserFile(userName string, newFileName string, userFileID int64) error
 		result, err := tx.Exec(
 			`UPDATE tbl_user_file
 				SET file_name = ?
-			 WHERE id = ? AND user_name = ? AND status = 0
+			 WHERE id = ? AND user_id = ? AND status = 0
 			`,
 			newFileName,
 			userFileID,
-			userName,
+			userID,
 		)
 		if err != nil {
 			return fmt.Errorf("rename user file: %w", err)

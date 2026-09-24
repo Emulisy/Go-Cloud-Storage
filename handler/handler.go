@@ -48,7 +48,7 @@ func GetFileMetaHandler(w http.ResponseWriter, r *http.Request, user auth.User) 
 		return
 	}
 
-	files, err := db.ListUserFiles(user.Username, page, pageSize)
+	files, err := db.ListUserFiles(user.UserID, page, pageSize)
 	if err != nil {
 		log.Printf("failed to query user files: %v", err)
 		http.Error(w, "unable to retrieve file metadata", http.StatusInternalServerError)
@@ -80,7 +80,7 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	download, err := db.GetUserFileDownload(user.Username, userFileID)
+	download, err := db.GetUserFileDownload(user.UserID, userFileID)
 	if err != nil {
 		if errors.Is(err, db.ErrUserFileNotFound) {
 			http.Error(w, "File not found", http.StatusNotFound)
@@ -138,7 +138,7 @@ func FileUpdateHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	if err := db.RenameUserFile(user.Username, newFileName, userFileID); err != nil {
+	if err := db.RenameUserFile(user.UserID, newFileName, userFileID); err != nil {
 		if errors.Is(err, db.ErrUserFileNotFound) {
 			http.Error(w, "File not found", http.StatusNotFound)
 			return
@@ -181,7 +181,7 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	cleanupPath, err := db.DeleteUserFile(user.Username, userFileID)
+	cleanupPath, err := db.DeleteUserFile(user.UserID, userFileID)
 	if err != nil {
 		if errors.Is(err, db.ErrUserFileNotFound) {
 			http.Error(w, "File not found", http.StatusNotFound)

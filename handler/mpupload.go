@@ -77,8 +77,8 @@ func InitialMPUploadHandler(
 		return
 	}
 
-	// 3. Generate a session key with file hash and user name
-	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+	// 3. Generate a session key with file hash and user ID
+	sessionKey := "mpupload:session:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 
 	//Check if there is existing upload session for the file
 	existingSession, err := redisClient.HGetAll(
@@ -99,7 +99,7 @@ func InitialMPUploadHandler(
 	if len(existingSession) > 0 {
 
 		// Verify that the existing session matches the requested file.
-		if existingSession["username"] != user.Username ||
+		if existingSession["user_id"] != strconv.FormatInt(user.UserID, 10) ||
 			existingSession["file_hash"] != fileHash ||
 			existingSession["file_size"] != strconv.FormatInt(fileSize, 10) {
 
@@ -207,7 +207,7 @@ func InitialMPUploadHandler(
 		r.Context(),
 		func(pipe redis.Pipeliner) error {
 			pipe.HSet(r.Context(), sessionKey, map[string]any{
-				"username":    user.Username,
+				"user_id":    strconv.FormatInt(user.UserID, 10),
 				"file_hash":   info.FileHash,
 				"file_size":   info.FileSize,
 				"file_name":   info.FileName,
@@ -280,16 +280,16 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	}
 
 	// 2. Check ownership and the expected size of this chunk.
-	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+	sessionKey := "mpupload:session:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 
-	chunkKey := "mpupload:chunks:" + user.Username + ":" + fileHash
+	chunkKey := "mpupload:chunks:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 	info, err := redisClient.HGetAll(r.Context(), sessionKey).Result()
 	if err != nil {
 		http.Error(w, "Unable to read upload session", http.StatusInternalServerError)
 		return
 	}
 	if len(info) == 0 ||
-		info["username"] != user.Username ||
+		info["user_id"] != strconv.FormatInt(user.UserID, 10) ||
 		info["file_hash"] != fileHash {
 
 		http.Error(
@@ -319,7 +319,7 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	// 3. Write to a temporary file; publish only a complete chunk.
 	//create a safe temp directory
 	sum := sha256.Sum256(
-		[]byte(user.Username + "\x00" + fileHash),
+		[]byte("userid:" + strconv.FormatInt(user.UserID, 10) + "\x00" + fileHash),
 	)
 
 	directory := filepath.Join(
@@ -422,16 +422,16 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	ctx := r.Context()
 
 	//verify all chunks have been uploaded
-	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+	sessionKey := "mpupload:session:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 
-	chunkKey := "mpupload:chunks:" + user.Username + ":" + fileHash
+	chunkKey := "mpupload:chunks:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 
 	info, err := redisClient.HGetAll(ctx, sessionKey).Result()
 	if err != nil {
 		http.Error(w, "Failed to retrieve upload information", http.StatusInternalServerError)
 		return
 	}
-	if len(info) == 0 || info["username"] != user.Username {
+	if len(info) == 0 || info["user_id"] != strconv.FormatInt(user.UserID, 10) {
 		http.Error(w, "Upload session not found", http.StatusNotFound)
 		return
 	}
@@ -484,7 +484,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 
 	//Locate the directory containing uploaded chunks.
 	sum := sha256.Sum256(
-		[]byte(user.Username + "\x00" + fileHash),
+		[]byte("userid:" + strconv.FormatInt(user.UserID, 10) + "\x00" + fileHash),
 	)
 
 	directory := filepath.Join(
@@ -587,7 +587,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	storedFile.Size = mergedSize
 
 	keepFile, err = db.StoreUserFile(
-		user.Username,
+		user.UserID,
 		fileName,
 		storedFile,
 	)
@@ -657,9 +657,9 @@ func UploadStatusHandler(
 
     ctx := r.Context()
 
-    sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+    sessionKey := "mpupload:session:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 
-    chunkKey := "mpupload:chunks:" + user.Username + ":" + fileHash
+    chunkKey := "mpupload:chunks:userid:" + strconv.FormatInt(user.UserID, 10) + ":" + fileHash
 
     // 3. Retrieve the existing upload session.
     info, err := redisClient.HGetAll(
@@ -673,7 +673,7 @@ func UploadStatusHandler(
     }
 
     if len(info) == 0 ||
-        info["username"] != user.Username ||
+        info["user_id"] != strconv.FormatInt(user.UserID, 10) ||
         info["file_hash"] != fileHash {
 
         http.Error(w, "Upload session not found", http.StatusNotFound)

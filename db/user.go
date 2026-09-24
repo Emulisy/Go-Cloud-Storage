@@ -6,49 +6,24 @@ import (
 	"fmt"
 	"github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
+	"net/mail"
 	"strings"
 )
 
-var ErrUsernameExists = errors.New("username already exists")
-var ErrInvalidCredentials = errors.New("invalid username or password")
+var ErrEmailExists = errors.New("email already exists")
+var ErrInvalidCredentials = errors.New("invalid email or password")
 
-// GetUserID returns the database ID for an active user.
-func GetUserID(userName string) (int64, error) {
-	conn := DBConn()
-	if conn == nil {
-		return 0, fmt.Errorf("get user ID: database is not initialized")
-	}
-
-	userName = strings.TrimSpace(userName)
-	if userName == "" || len(userName) > 64 {
-		return 0, ErrInvalidCredentials
-	}
-
-	var userID int64
-	err := conn.QueryRow(`
-		SELECT id
-		FROM tbl_user
-		WHERE user_name = ? AND status = 0
-		LIMIT 1
-	`, userName).Scan(&userID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrInvalidCredentials
-		}
-
-		return 0, fmt.Errorf("get user ID: %w", err)
-	}
-
-	return userID, nil
-}
-
-func UserSignUp(userName string, userPwd string) error {
+func UserSignUp(userName string, email string, userPwd string) error {
 	conn := DBConn()
 	if conn == nil {
 		return fmt.Errorf("user signup: database is not initialized")
 	}
 
 	userName = strings.TrimSpace(userName)
+	email, err := NormalizeEmail(email)
+	if err != nil {
+		return err
+	}
 
 	if userName == "" || userPwd == "" {
 		return fmt.Errorf("username and password cannot be empty")
@@ -59,17 +34,17 @@ func UserSignUp(userName string, userPwd string) error {
 	}
 
 	query := `
-		INSERT INTO tbl_user (user_name, user_pwd)
-		VALUES (?, ?)
+		INSERT INTO tbl_user (user_name, email, user_pwd)
+		VALUES (?, ?, ?)
 	`
 
-	res, err := conn.Exec(query, userName, userPwd)
+	res, err := conn.Exec(query, userName, email, userPwd)
 	if err != nil {
 		var mysqlErr *mysql.MySQLError
 
 		// MySQL error 1062 means a UNIQUE constraint was violated.
 		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-			return ErrUsernameExists
+			return ErrEmailExists
 		}
 
 		return fmt.Errorf("user signup: %w", err)
@@ -87,47 +62,38 @@ func UserSignUp(userName string, userPwd string) error {
 	return nil
 }
 
-func UserSignin(userName string, userPwd string) error {
+// NormalizeEmail accepts a plain address and normalizes it for account lookup.
+func NormalizeEmail(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	address, err := mail.ParseAddress(email)
+	if err != nil || len(email) > 254 || address.Address != email || address.Name != "" {
+		return "", fmt.Errorf("invalid email address")
+	}
+	return email, nil
+}
+
+func UserSignin(email string, userPwd string) (int64, error) {
+	email, err := NormalizeEmail(email)
+	if err != nil || userPwd == "" {
+		return 0, ErrInvalidCredentials
+	}
 	conn := DBConn()
 	if conn == nil {
-		return fmt.Errorf("user signup: database is not initialized")
+		return 0, fmt.Errorf("user signin: database is not initialized")
 	}
-
-	if userName == "" || userPwd == "" {
-		return ErrInvalidCredentials
-	}
-
-	if len(userName) > 64 {
-		return ErrInvalidCredentials
-	}
-
-	query := `
-		SELECT user_pwd
-		FROM tbl_user
-		WHERE user_name = ?
-		LIMIT 1
-	`
-
-	// This variable receives the bcrypt hash stored in MySQL.
+	var userID int64
 	var storedHash string
-
-	err := conn.QueryRow(query, userName).Scan(&storedHash)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrInvalidCredentials
-		}
-
-		return fmt.Errorf("user signin: %w", err)
+	err = conn.QueryRow(`SELECT id, user_pwd FROM tbl_user WHERE email = ? AND status = 0 LIMIT 1`, email).Scan(&userID, &storedHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrInvalidCredentials
 	}
-
-	err = bcrypt.CompareHashAndPassword(
-		[]byte(storedHash),
-		[]byte(userPwd),
-	)
 	if err != nil {
-		return ErrInvalidCredentials
+		return 0, fmt.Errorf("user signin: %w", err)
 	}
-	return nil
+	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(userPwd)); err != nil {
+		return 0, ErrInvalidCredentials
+	}
+	return userID, nil
 }
 
 type UserInfo struct {
@@ -139,17 +105,13 @@ type UserInfo struct {
 	status     int
 }
 
-func GetUserInfo(userName string) (*UserInfo, error) {
+func GetUserInfo(userID int64) (*UserInfo, error) {
 	conn := DBConn()
 	if conn == nil {
 		return nil, fmt.Errorf("user signup: database is not initialized")
 	}
 
-	if userName == "" {
-		return nil, ErrInvalidCredentials
-	}
-
-	if len(userName) > 64 {
+	if userID < 1 {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -158,11 +120,11 @@ func GetUserInfo(userName string) (*UserInfo, error) {
 	query := `
 		SELECT user_name, COALESCE(phone, ''), COALESCE(email, ''), signup_at, last_active
 		FROM tbl_user
-		WHERE user_name=? AND status=0
+		WHERE id=? AND status=0
 		LIMIT 1
 	`
 
-	err := conn.QueryRow(query, userName).Scan(
+	err := conn.QueryRow(query, userID).Scan(
 		&user.Username,
 		&user.Phone,
 		&user.Email,

@@ -24,12 +24,12 @@ CREATE TABLE IF NOT EXISTS tbl_user (
         COMMENT 'Internal user identifier',
 
     user_name VARCHAR(64) NOT NULL
-        COMMENT 'Unique sign-in name',
+        COMMENT 'Non-unique display name',
     user_pwd VARCHAR(255) NOT NULL
         COMMENT 'Bcrypt password hash',
 
-    email VARCHAR(254) DEFAULT NULL
-        COMMENT 'Optional user email address',
+    email VARCHAR(254) NOT NULL
+        COMMENT 'Unique normalized sign-in email address',
     phone VARCHAR(32) DEFAULT NULL
         COMMENT 'Optional user phone number',
 
@@ -49,7 +49,6 @@ CREATE TABLE IF NOT EXISTS tbl_user (
         COMMENT 'User status: 0=active, 1=disabled',
 
     PRIMARY KEY (id),
-    UNIQUE KEY idx_user_name (user_name),
     UNIQUE KEY idx_email (email),
     UNIQUE KEY idx_phone (phone),
     KEY idx_status (status)
@@ -60,8 +59,8 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT
         COMMENT 'Internal user-file relationship identifier',
 
-    `user_name` VARCHAR(64) NOT NULL
-        COMMENT 'Username that owns the file relationship',
+    `user_id` BIGINT UNSIGNED NOT NULL
+        COMMENT 'User ID that owns the file relationship',
 
     `file_sha256` CHAR(64) NOT NULL
         COMMENT 'File SHA-256 hash as 64 hexadecimal characters',
@@ -84,15 +83,15 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
 
     PRIMARY KEY (`id`),
 
-    KEY `idx_user_name` (`user_name`),
+    KEY `idx_user_id` (`user_id`),
 
     KEY `idx_file_sha256` (`file_sha256`),
 
     KEY `idx_status` (`status`),
 
     CONSTRAINT `fk_user_file_owner`
-        FOREIGN KEY (`user_name`)
-        REFERENCES `tbl_user` (`user_name`)
+        FOREIGN KEY (`user_id`)
+        REFERENCES `tbl_user` (`id`)
         ON UPDATE CASCADE
         ON DELETE RESTRICT,
 

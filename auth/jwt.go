@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -12,7 +13,7 @@ import (
 
 // User is the identity authenticated by RequireAuth.
 type User struct {
-	Username string
+	UserID int64
 }
 
 // Handler is an HTTP handler that receives an authenticated user.
@@ -33,7 +34,10 @@ func getSecretKey() ([]byte, error) {
 }
 
 // GenerateToken creates a JWT after successful sign-in.
-func GenerateToken(username string) (string, error) {
+func GenerateToken(userID int64) (string, error) {
+	if userID < 1 {
+		return "", errors.New("invalid user ID")
+	}
 	key, err := getSecretKey()
 	if err != nil {
 		return "", err
@@ -42,19 +46,19 @@ func GenerateToken(username string) (string, error) {
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.MapClaims{
-			"username": username,
-			"exp":      time.Now().Add(24 * time.Hour).Unix(),
+			"userId": strconv.FormatInt(userID, 10),
+			"exp":    time.Now().Add(24 * time.Hour).Unix(),
 		},
 	)
 
 	return token.SignedString(key)
 }
 
-// VerifyToken verifies a JWT and returns its username.
-func VerifyToken(tokenString string) (string, error) {
+// VerifyToken verifies a JWT and returns its user ID.
+func VerifyToken(tokenString string) (int64, error) {
 	key, err := getSecretKey()
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
 	token, err := jwt.Parse(
@@ -67,24 +71,27 @@ func VerifyToken(tokenString string) (string, error) {
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("verify JWT: %w", err)
+		return 0, fmt.Errorf("verify JWT: %w", err)
 	}
 
 	if !token.Valid {
-		return "", errors.New("invalid JWT")
+		return 0, errors.New("invalid JWT")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", errors.New("invalid JWT claims")
+		return 0, errors.New("invalid JWT claims")
 	}
 
-	username, ok := claims["username"].(string)
-	if !ok || username == "" {
-		return "", errors.New("missing JWT username")
+	rawID, ok := claims["userId"].(string)
+	if !ok {
+		return 0, errors.New("missing JWT user ID")
 	}
-
-	return username, nil
+	userID, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil || userID < 1 || strconv.FormatInt(userID, 10) != rawID {
+		return 0, errors.New("invalid JWT user ID")
+	}
+	return userID, nil
 }
 
 // RequireAuth verifies the access token and passes the authenticated user to next.
@@ -96,13 +103,13 @@ func RequireAuth(next Handler) http.HandlerFunc {
 			return
 		}
 
-		username, err := VerifyToken(cookie.Value)
+		userID, err := VerifyToken(cookie.Value)
 		if err != nil {
 			handleUnauthenticated(w, r)
 			return
 		}
 
-		next(w, r, User{Username: username})
+		next(w, r, User{UserID: userID})
 	}
 }
 

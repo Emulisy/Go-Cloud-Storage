@@ -35,10 +35,11 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		username := strings.TrimSpace(r.PostForm.Get("userName"))
+		email, emailErr := db.NormalizeEmail(r.PostForm.Get("email"))
 		userPwd := r.PostForm.Get("userPwd")
 
-		if len(username) < 3 || len(username) > 64 || len(userPwd) < 5 || len(userPwd) > 72 {
-			http.Error(w, "Invalid username or password", http.StatusBadRequest)
+		if emailErr != nil || len(username) < 3 || len(username) > 64 || len(userPwd) < 5 || len(userPwd) > 72 {
+			http.Error(w, "Invalid username, email or password", http.StatusBadRequest)
 			return
 		}
 
@@ -54,10 +55,10 @@ func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Pass the password hash to the database layer.
-		err = db.UserSignUp(username, string(hashedPwd))
+		err = db.UserSignUp(username, email, string(hashedPwd))
 		if err != nil {
-			if errors.Is(err, db.ErrUsernameExists) {
-				http.Error(w, "Username already exists", http.StatusConflict)
+			if errors.Is(err, db.ErrEmailExists) {
+				http.Error(w, "Email already exists", http.StatusConflict)
 				return
 			}
 
@@ -88,18 +89,18 @@ func SigninHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := strings.TrimSpace(r.PostForm.Get("userName"))
+	email, emailErr := db.NormalizeEmail(r.PostForm.Get("email"))
 	userPwd := r.PostForm.Get("userPwd")
 
-	if len(username) < 3 || len(username) > 64 || len(userPwd) < 5 || len(userPwd) > 72 {
-		http.Error(w, "Invalid username or password", http.StatusBadRequest)
+	if emailErr != nil || len(userPwd) < 5 || len(userPwd) > 72 {
+		http.Error(w, "Invalid email or password", http.StatusBadRequest)
 		return
 	}
 
-	err := db.UserSignin(username, userPwd)
+	userID, err := db.UserSignin(email, userPwd)
 	if err != nil {
 		if errors.Is(err, db.ErrInvalidCredentials) {
-			http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+			http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 			return
 		}
 
@@ -108,7 +109,7 @@ func SigninHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateToken(username)
+	token, err := auth.GenerateToken(userID)
 	if err != nil {
 		log.Printf("Generate token: %v", err)
 		http.Error(w, "Unable to sign in", http.StatusInternalServerError)
@@ -155,7 +156,7 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	userInfo, err := db.GetUserInfo(user.Username)
+	userInfo, err := db.GetUserInfo(user.UserID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "User not found", http.StatusUnauthorized)

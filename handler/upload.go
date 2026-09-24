@@ -44,7 +44,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		storedFile.Hash = sha256
 
 		//first try the fast upload
-		reused, err := tryFastUpload(user.Username, originalFileName, storedFile.Hash)
+		reused, err := tryFastUpload(user.UserID, originalFileName, storedFile.Hash)
 		if err != nil {
 			log.Printf("failed to reuse uploaded file: %v", err)
 			http.Error(w, "failed to check stored file", http.StatusInternalServerError)
@@ -85,7 +85,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		}
 
 		contentCreated, err := db.StoreUserFile(
-			user.Username,
+			user.UserID,
 			originalFileName,
 			storedFile,
 		)
@@ -106,7 +106,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 }
 
 // tryFastUpload links existing content to the user without storing it again.
-func tryFastUpload(username string, originalFileName string, fileHash string) (bool, error) {
+func tryFastUpload(userID int64, originalFileName string, fileHash string) (bool, error) {
 	storedFile, err := db.GetStoredFile(fileHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -126,7 +126,7 @@ func tryFastUpload(username string, originalFileName string, fileHash string) (b
 		return false, fmt.Errorf("stored file does not match metadata")
 	}
 
-	if err := db.LinkUserFile(username, originalFileName, fileHash); err != nil {
+	if err := db.LinkUserFile(userID, originalFileName, fileHash); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
