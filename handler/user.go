@@ -14,6 +14,104 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// UpdateUserNameHandler accepts a userName form field for the authenticated account.
+func UpdateUserNameHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPatch {
+		w.Header().Set("Allow", "PATCH")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("userName"))
+	if len(name) < 3 || len(name) > 64 {
+		http.Error(w, "Username must be between 3 and 64 bytes", http.StatusBadRequest)
+		return
+	}
+	if err := db.UpdateUserName(user.UserID, name); err != nil {
+		if errors.Is(err, db.ErrInvalidCredentials) {
+			http.Error(w, "Invalid credentials or inactive account", http.StatusUnauthorized)
+			return
+		}
+
+		log.Printf("Update user info: %v", err)
+		http.Error(w, "Unable to update user information", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte("SUCCESS"))
+}
+
+// UpdateUserPwdHandler accepts currentPwd and newPwd plaintext form fields.
+// The database layer verifies the current password and hashes the replacement.
+func UpdateUserPwdHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPatch {
+		w.Header().Set("Allow", "PATCH")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+	currentPwd := r.PostForm.Get("currentPwd")
+	newPwd := r.PostForm.Get("newPwd")
+	if len(currentPwd) < 5 || len(currentPwd) > 72 || len(newPwd) < 5 || len(newPwd) > 72 {
+		http.Error(w, "Passwords must be between 5 and 72 bytes", http.StatusBadRequest)
+		return
+	}
+	if err := db.UpdateUserPwd(user.UserID, currentPwd, newPwd); err != nil {
+		if errors.Is(err, db.ErrInvalidCredentials) {
+			http.Error(w, "Invalid credentials or inactive account", http.StatusUnauthorized)
+			return
+		}
+
+		log.Printf("Update user info: %v", err)
+		http.Error(w, "Unable to update user information", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte("SUCCESS"))
+}
+
+// UpdateUserEmailHandler accepts an email form field for the authenticated account.
+func UpdateUserEmailHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPatch {
+		w.Header().Set("Allow", "PATCH")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+	email, err := db.NormalizeEmail(r.PostForm.Get("email"))
+	if err != nil {
+		http.Error(w, "Invalid email address", http.StatusBadRequest)
+		return
+	}
+	if err := db.UpdateUserEmail(user.UserID, email); err != nil {
+		if errors.Is(err, db.ErrInvalidCredentials) {
+			http.Error(w, "Invalid credentials or inactive account", http.StatusUnauthorized)
+			return
+		}
+		if errors.Is(err, db.ErrEmailExists) {
+			http.Error(w, "Email already exists", http.StatusConflict)
+			return
+		}
+		log.Printf("Update user info: %v", err)
+		http.Error(w, "Unable to update user information", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte("SUCCESS"))
+}
+
 // user sign up, create new user in tbl_user
 func SignUpHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -126,7 +224,8 @@ func SigninHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   24 * 60 * 60,
 	})
 
-	http.Redirect(w, r, "/file/home", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte("SUCCESS"))
 }
 
 // HomeHandler displays the authenticated user's home page.
@@ -170,13 +269,11 @@ func UserInfoHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 
 	response := struct {
 		Username   string `json:"username"`
-		Phone      string `json:"phone"`
 		Email      string `json:"email"`
 		SignupAt   string `json:"signupAt"`
 		LastActive string `json:"lastActive"`
 	}{
 		Username:   userInfo.Username,
-		Phone:      userInfo.Phone,
 		Email:      userInfo.Email,
 		SignupAt:   userInfo.SignupAt,
 		LastActive: userInfo.LastActive,

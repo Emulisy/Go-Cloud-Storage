@@ -74,7 +74,7 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	userFileID, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	userFileID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || userFileID < 1 {
 		http.Error(w, "Invalid user file ID", http.StatusBadRequest)
 		return
@@ -115,8 +115,8 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 
 // FileUpdateHandler renames one user-specific file row.
 func FileUpdateHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
+	if r.Method != http.MethodPatch {
+		w.Header().Set("Allow", "PATCH")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -126,7 +126,7 @@ func FileUpdateHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	userFileID, err := strconv.ParseInt(r.Form.Get("id"), 10, 64)
+	userFileID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || userFileID < 1 {
 		http.Error(w, "Invalid user file ID", http.StatusBadRequest)
 		return
@@ -175,7 +175,7 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	userFileID, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	userFileID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || userFileID < 1 {
 		http.Error(w, "Invalid user file ID", http.StatusBadRequest)
 		return

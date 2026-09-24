@@ -28,6 +28,7 @@ func InitialMPUploadHandler(
 	user auth.User,
 ) {
 	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -241,18 +242,19 @@ func InitialMPUploadHandler(
 
 // UploadPartHandler receives one raw chunk for an owned upload session.
 func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodPut {
+		w.Header().Set("Allow", "PUT")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// 1. Read chunk identifiers.
 	fileHash := strings.ToLower(
-		strings.TrimSpace(r.URL.Query().Get("filehash")),
+		strings.TrimSpace(r.PathValue("filehash")),
 	)
 
 	index, err := strconv.ParseInt(
-		r.URL.Query().Get("index"),
+		r.PathValue("index"),
 		10,
 		64,
 	)
@@ -412,8 +414,16 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 
 	//1. parse form and get redis client
 	fileHash := strings.ToLower(
-		strings.TrimSpace(r.URL.Query().Get("filehash")),
+		strings.TrimSpace(r.PathValue("filehash")),
 	)
+	if len(fileHash) != 64 {
+		http.Error(w, "Invalid SHA-256 hash", http.StatusBadRequest)
+		return
+	}
+	if _, err := hex.DecodeString(fileHash); err != nil {
+		http.Error(w, "Invalid SHA-256 hash", http.StatusBadRequest)
+		return
+	}
 	redisClient := cache.RedisClient()
 	if redisClient == nil {
 		http.Error(w, "Redis is not initialized", http.StatusInternalServerError)
@@ -634,7 +644,7 @@ func UploadStatusHandler(
 
     // 1. Read and validate the file hash.
     fileHash := strings.ToLower(
-        strings.TrimSpace(r.URL.Query().Get("filehash")),
+        strings.TrimSpace(r.PathValue("filehash")),
     )
 
     if len(fileHash) != 64 {

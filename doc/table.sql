@@ -30,13 +30,9 @@ CREATE TABLE IF NOT EXISTS tbl_user (
 
     email VARCHAR(254) NOT NULL
         COMMENT 'Unique normalized sign-in email address',
-    phone VARCHAR(32) DEFAULT NULL
-        COMMENT 'Optional user phone number',
 
     email_validated BOOLEAN NOT NULL DEFAULT FALSE
         COMMENT 'Whether the email address has been verified',
-    phone_validated BOOLEAN NOT NULL DEFAULT FALSE
-        COMMENT 'Whether the phone number has been verified',
 
     signup_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
         COMMENT 'Time the account was created',
@@ -50,7 +46,6 @@ CREATE TABLE IF NOT EXISTS tbl_user (
 
     PRIMARY KEY (id),
     UNIQUE KEY idx_email (email),
-    UNIQUE KEY idx_phone (phone),
     KEY idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   COMMENT='Application user accounts';

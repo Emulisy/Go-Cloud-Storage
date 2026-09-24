@@ -51,7 +51,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 			return
 		}
 		if reused {
-			http.Redirect(w, r, "/file/home", http.StatusSeeOther)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte("SUCCESS"))
 			return
 		}
 
@@ -98,7 +100,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		// A concurrent upload may have created the shared row first. In that case,
 		// this request's temporary file is redundant and the deferred cleanup removes it.
 		uploadSucceeded = contentCreated
-		http.Redirect(w, r, "/file/home", http.StatusSeeOther)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("SUCCESS"))
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
