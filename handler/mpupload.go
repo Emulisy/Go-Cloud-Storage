@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,7 +17,6 @@ import (
 	"goCloudStorage/auth"
 	"goCloudStorage/cache"
 	"goCloudStorage/db"
-	"goCloudStorage/util"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -40,6 +39,7 @@ func InitialMPUploadHandler(
 	}
 
 	fileHash := strings.TrimSpace(r.PostForm.Get("filehash"))
+	fileName := strings.TrimSpace(r.PostForm.Get("filename"))
 
 	fileSize, err := strconv.ParseInt(
 		r.PostForm.Get("filesize"),
@@ -63,15 +63,10 @@ func InitialMPUploadHandler(
 		return
 	}
 
-	// 3. Generate a random upload ID.
-	randomBytes := make([]byte, 16)
+	// 3. Generate a session key with file hash and user name
+	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
 
-	if _, err := rand.Read(randomBytes); err != nil {
-		http.Error(w, "Unable to initialize upload", http.StatusInternalServerError)
-		return
-	}
-
-	uploadID := hex.EncodeToString(randomBytes)
+	//Check if there is existing upload session for the file
 
 	// 4. Calculate chunk information.
 	const chunkSize int64 = 5 * 1024 * 1024 // 5 MiB
@@ -81,28 +76,29 @@ func InitialMPUploadHandler(
 	info := cache.MPUploadInfo{
 		FileHash:   fileHash,
 		FileSize:   fileSize,
-		UploadID:   uploadID,
+		FileName:   fileName,
+		UploadID:   sessionKey,
 		ChunkSize:  chunkSize,
 		ChunkCount: chunkCount,
+		CreatedAt:  time.Now(),
 	}
-
-	// 5. Save upload information in Redis.
-	key := "upload:" + uploadID
 
 	_, err = redisClient.TxPipelined(
 		r.Context(),
 		func(pipe redis.Pipeliner) error {
-			pipe.HSet(r.Context(), key, map[string]any{
+			pipe.HSet(r.Context(), sessionKey, map[string]any{
 				"username":    user.Username,
 				"file_hash":   info.FileHash,
 				"file_size":   info.FileSize,
+				"file_name":   info.FileName,
 				"upload_id":   info.UploadID,
 				"chunk_size":  info.ChunkSize,
 				"chunk_count": info.ChunkCount,
 				"status":      "uploading",
+				"created_at":  info.CreatedAt,
 			})
 
-			pipe.Expire(r.Context(), key, 24*time.Hour)
+			pipe.Expire(r.Context(), sessionKey, 24*time.Hour)
 
 			return nil
 		},
@@ -130,31 +126,60 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	// 1. Read chunk identifiers without consuming the binary body.
-	uploadID := r.URL.Query().Get("uploadid")
-	index, err := strconv.ParseInt(r.URL.Query().Get("index"), 10, 64)
-	decoded, decodeErr := hex.DecodeString(uploadID)
-	if err != nil || index < 0 || decodeErr != nil || len(decoded) != 16 {
-		http.Error(w, "Invalid chunk identifiers", http.StatusBadRequest)
+	// 1. Read chunk identifiers.
+	fileHash := strings.ToLower(
+		strings.TrimSpace(r.URL.Query().Get("filehash")),
+	)
+
+	index, err := strconv.ParseInt(
+		r.URL.Query().Get("index"),
+		10,
+		64,
+	)
+
+	if err != nil || index < 0 {
+		http.Error(w, "Invalid chunk index", http.StatusBadRequest)
 		return
 	}
-	client := cache.RedisClient()
-	if client == nil {
+
+	// Validate SHA-256.
+	if len(fileHash) != 64 {
+		http.Error(w, "Invalid file hash", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := hex.DecodeString(fileHash); err != nil {
+		http.Error(w, "Invalid file hash", http.StatusBadRequest)
+		return
+	}
+
+	redisClient := cache.RedisClient()
+	if redisClient == nil {
 		http.Error(w, "Redis is not initialized", http.StatusInternalServerError)
 		return
 	}
 
 	// 2. Check ownership and the expected size of this chunk.
-	key := "upload:" + uploadID
-	info, err := client.HGetAll(r.Context(), key).Result()
+	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+
+	chunkKey := "mpupload:chunks:" + user.Username + ":" + fileHash
+	info, err := redisClient.HGetAll(r.Context(), sessionKey).Result()
 	if err != nil {
 		http.Error(w, "Unable to read upload session", http.StatusInternalServerError)
 		return
 	}
-	if len(info) == 0 || info["username"] != user.Username {
-		http.Error(w, "Upload session not found", http.StatusNotFound)
+	if len(info) == 0 ||
+		info["username"] != user.Username ||
+		info["file_hash"] != fileHash {
+
+		http.Error(
+			w,
+			"Upload session not found",
+			http.StatusNotFound,
+		)
 		return
 	}
+
 	count, countErr := strconv.ParseInt(info["chunk_count"], 10, 64)
 	size, sizeErr := strconv.ParseInt(info["file_size"], 10, 64)
 	chunkSize, chunkErr := strconv.ParseInt(info["chunk_size"], 10, 64)
@@ -172,7 +197,16 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	}
 
 	// 3. Write to a temporary file; publish only a complete chunk.
-	directory := filepath.Join(os.TempDir(), "gocloudstorage-parts", uploadID)
+	//create a safe temp directory
+	sum := sha256.Sum256(
+		[]byte(user.Username + "\x00" + fileHash),
+	)
+
+	directory := filepath.Join(
+		os.TempDir(),
+		"gocloudstorage-parts",
+		hex.EncodeToString(sum[:]),
+	)
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		http.Error(w, "Unable to create chunk directory", http.StatusInternalServerError)
 		return
@@ -202,26 +236,54 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	// 4. Record the chunk and keep its status bounded by the session lifetime.
-	_, err = client.TxPipelined(r.Context(), func(pipe redis.Pipeliner) error {
-		pipe.SAdd(r.Context(), key+":chunks", chunkIndex)
-		pipe.Expire(r.Context(), key+":chunks", 24*time.Hour)
-		return nil
-	})
+	// 4. Refresh the remaining session lifetime and record the success uploaded chunk
+	_, err = redisClient.TxPipelined(
+		r.Context(),
+		func(pipe redis.Pipeliner) error {
+
+			// Record the successfully uploaded chunk.
+			pipe.SAdd(
+				r.Context(),
+				chunkKey,
+				chunkIndex,
+			)
+
+			// Refresh the upload session expiry.
+			pipe.Expire(
+				r.Context(),
+				sessionKey,
+				24*time.Hour,
+			)
+
+			// Refresh the chunk tracking expiry.
+			pipe.Expire(
+				r.Context(),
+				chunkKey,
+				24*time.Hour,
+			)
+
+			return nil
+		},
+	)
+
 	if err != nil {
-		http.Error(w, "Unable to record chunk", http.StatusInternalServerError)
+		http.Error(
+			w,
+			"Unable to record chunk",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
 	// 5. Return the upload result.
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status": "OK", "uploadId": uploadID, "index": index,
+		"status": "OK", "uploadId": sessionKey, "index": index,
 	})
 }
 
 // combiner parts
-func CompleteUploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
+func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -229,30 +291,21 @@ func CompleteUploadHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	}
 
 	//1. parse form and get redis client
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form data", http.StatusBadRequest)
-		return
-	}
-	uploadID := strings.TrimSpace(r.PostForm.Get("uploadid"))
-	fileName := strings.TrimSpace(r.PostForm.Get("filename"))
-	if decoded, err := hex.DecodeString(uploadID); err != nil || len(decoded) != 16 {
-		http.Error(w, "Invalid upload ID", http.StatusBadRequest)
-		return
-	}
-	if fileName == "" || len(fileName) > 255 {
-		http.Error(w, "Invalid filename", http.StatusBadRequest)
-		return
-	}
+	fileHash := strings.ToLower(
+		strings.TrimSpace(r.URL.Query().Get("filehash")),
+	)
 	redisClient := cache.RedisClient()
 	if redisClient == nil {
 		http.Error(w, "Redis is not initialized", http.StatusInternalServerError)
 		return
 	}
 	ctx := r.Context()
-	sessionKey := "upload:" + uploadID
-	chunkKey := sessionKey + ":chunks"
 
-	//2. check if all parts are uploaded ready to merge
+	//verify all chunks have been uploaded
+	sessionKey := "mpupload:session:" + user.Username + ":" + fileHash
+
+	chunkKey := "mpupload:chunks:" + user.Username + ":" + fileHash
+
 	info, err := redisClient.HGetAll(ctx, sessionKey).Result()
 	if err != nil {
 		http.Error(w, "Failed to retrieve upload information", http.StatusInternalServerError)
@@ -268,92 +321,179 @@ func CompleteUploadHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	}
 	totalCount, countErr := strconv.ParseInt(info["chunk_count"], 10, 64)
 	expectedSize, sizeErr := strconv.ParseInt(info["file_size"], 10, 64)
+	fileName := info["file_name"]
 	if countErr != nil || sizeErr != nil || totalCount <= 0 || expectedSize <= 0 {
 		http.Error(w, "Invalid upload information", http.StatusInternalServerError)
 		return
 	}
-	uploadedCount, err := redisClient.SCard(ctx, chunkKey).Result()
+
+	uploadedChunks, err := redisClient.SMembers(
+		ctx,
+		chunkKey,
+	).Result()
+
 	if err != nil {
-		http.Error(w, "Failed to check chunk status", http.StatusInternalServerError)
+		http.Error(w, "Failed to retrieve uploaded chunks", http.StatusInternalServerError)
 		return
 	}
-	if uploadedCount != totalCount {
+	//Verify the number of uploaded chunks.
+	if int64(len(uploadedChunks)) != totalCount {
 		http.Error(w, "Not all chunks have been uploaded", http.StatusConflict)
 		return
 	}
 
-	//3. merge the chunks
-	newFile, err := os.CreateTemp("", "gocloudstorage-*")
+	// 3. Convert the uploaded indices into a map.
+	uploadedMap := make(map[string]bool)
+
+	for _, chunkIndex := range uploadedChunks {
+		uploadedMap[chunkIndex] = true
+	}
+
+	// 4. Verify that every expected index exists.
+	for i := int64(0); i < totalCount; i++ {
+
+		chunkIndex := strconv.FormatInt(i, 10)
+
+		if !uploadedMap[chunkIndex] {
+			http.Error(w, "Missing chunk: "+chunkIndex, http.StatusConflict)
+			return
+		}
+	}
+
+	//4. merge the chunks
+
+	//Locate the directory containing uploaded chunks.
+	sum := sha256.Sum256(
+		[]byte(user.Username + "\x00" + fileHash),
+	)
+
+	directory := filepath.Join(
+		os.TempDir(),
+		"gocloudstorage-parts",
+		hex.EncodeToString(sum[:]),
+	)
+
+	// Keep stored content outside the chunk directory so cleanup cannot remove it.
+	mergedFile, err := os.CreateTemp(
+		"",
+		"gocloudstorage-*",
+	)
+
 	if err != nil {
 		http.Error(w, "Failed to create merged file", http.StatusInternalServerError)
 		return
 	}
-	storedFile := db.StoredFile{Addr: newFile.Name()}
+
 	keepFile := false
 	defer func() {
-		_ = newFile.Close()
+		_ = mergedFile.Close()
 		if !keepFile {
-			_ = os.Remove(storedFile.Addr)
+			_ = os.Remove(mergedFile.Name())
 		}
 	}()
 
-	chunkDirectory := filepath.Join(os.TempDir(), "gocloudstorage-parts", uploadID)
+	var mergedSize int64 //track the real size of the merged file
+
 	for i := int64(0); i < totalCount; i++ {
-		chunk, err := os.Open(filepath.Join(chunkDirectory, strconv.FormatInt(i, 10)))
+		//The path of the current chunk
+		chunkPath := filepath.Join(
+			directory,
+			strconv.FormatInt(i, 10),
+		)
+
+		chunk, err := os.Open(chunkPath)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Unable to read chunk %d", i), http.StatusConflict)
+			http.Error(w, "Failed to open chunk", http.StatusInternalServerError)
 			return
 		}
-		written, copyErr := io.Copy(newFile, chunk)
+		written, copyErr := io.Copy(
+			mergedFile,
+			chunk,
+		)
+
 		closeErr := chunk.Close()
+
 		if copyErr != nil || closeErr != nil {
-			http.Error(w, "Failed to merge chunks", http.StatusInternalServerError)
+			http.Error(w, "Failed to merge chunk", http.StatusInternalServerError)
 			return
 		}
-		storedFile.Size += written
+
+		mergedSize += written
 	}
-	if _, err := newFile.Seek(0, io.SeekStart); err != nil {
+
+	//verify merged file size
+	if mergedSize != expectedSize {
+		http.Error(
+			w,
+			"Merged file size does not match",
+			http.StatusConflict,
+		)
+		return
+	}
+
+	//verify the hash of the merged file
+	if _, err := mergedFile.Seek(0, io.SeekStart); err != nil {
 		http.Error(w, "Failed to read merged file", http.StatusInternalServerError)
 		return
 	}
-	storedFile.Hash, err = util.CalculateSHA256(newFile)
+	hasher := sha256.New()
+
+	_, err = io.Copy(hasher, mergedFile)
 	if err != nil {
-		http.Error(w, "Failed to hash merged file", http.StatusInternalServerError)
+		http.Error(w, "Failed to calculate file hash", http.StatusInternalServerError)
 		return
 	}
-	if storedFile.Size != expectedSize || !strings.EqualFold(storedFile.Hash, info["file_hash"]) {
-		http.Error(w, "Uploaded file does not match its size or hash", http.StatusUnprocessableEntity)
+	mergedHash := hex.EncodeToString(hasher.Sum(nil))
+
+	if mergedHash != fileHash {
+		http.Error(
+			w,
+			"Merged file hash does not match",
+			http.StatusConflict,
+		)
 		return
 	}
-	if err := newFile.Close(); err != nil {
+
+	if err := mergedFile.Close(); err != nil {
 		http.Error(w, "Failed to close merged file", http.StatusInternalServerError)
 		return
 	}
 
-	//4. update the tbl_file and tbl_user_file
-	keepFile, err = db.StoreUserFile(user.Username, fileName, storedFile)
+	//5. update the mysql upon successful upload
+	storedFile := db.StoredFile{}
+
+	storedFile.Addr = mergedFile.Name()
+	storedFile.Hash = mergedHash
+	storedFile.Size = mergedSize
+
+	keepFile, err = db.StoreUserFile(
+		user.Username,
+		fileName,
+		storedFile,
+	)
 	if err != nil {
-		log.Printf("Store multipart upload: %v", err)
-		http.Error(w, "Failed to save uploaded file", http.StatusInternalServerError)
+		log.Printf("failed to store user file: %v", err)
+		http.Error(w, "failed to save uploaded file", http.StatusInternalServerError)
 		return
 	}
+
+	// Retire the upload and remove only its numbered chunk files.
 	if err := redisClient.Del(ctx, sessionKey, chunkKey).Err(); err != nil {
 		log.Printf("Remove multipart upload state: %v", err)
 	}
 	for i := int64(0); i < totalCount; i++ {
-		if err := os.Remove(filepath.Join(chunkDirectory, strconv.FormatInt(i, 10))); err != nil {
+		if err := os.Remove(filepath.Join(directory, strconv.FormatInt(i, 10))); err != nil {
 			log.Printf("Remove uploaded chunk: %v", err)
 		}
 	}
-	if err := os.Remove(chunkDirectory); err != nil {
+	if err := os.Remove(directory); err != nil {
 		log.Printf("Remove upload directory: %v", err)
 	}
 
-	//5. return result
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(map[string]any{
-		"status": "OK", "uploadId": uploadID,
+		"status": "OK", "uploadId": sessionKey,
 		"fileHash": storedFile.Hash, "fileSize": storedFile.Size,
 	}); err != nil {
 		log.Printf("Encode upload result: %v", err)

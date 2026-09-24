@@ -70,6 +70,7 @@
         ).join("");
         const upload = await uploadRequest("/file/upload/init", new URLSearchParams({
           filehash: hash,
+          filename: file.name,
           filesize: String(file.size)
         }));
 
@@ -78,16 +79,15 @@
           const start = index * upload.chunkSize;
           const chunk = file.slice(start, Math.min(start + upload.chunkSize, file.size), "application/octet-stream");
           await uploadRequest(`/file/upload/part?${new URLSearchParams({
-            uploadid: upload.uploadId, index: String(index)
+            filehash: hash, index: String(index)
           })}`, chunk);
           progress.value = Math.round(Math.min(start + chunk.size, file.size) / file.size * 100);
         }
 
         status.textContent = "Verifying and saving your file…";
-        await uploadRequest("/file/upload/complete", new URLSearchParams({
-          uploadid: upload.uploadId,
-          filename: file.name
-        }));
+        await uploadRequest(`/file/upload/complete?${new URLSearchParams({
+          filehash: hash
+        })}`);
         window.location.assign("/file/home");
       } catch (error) {
         status.textContent = error.message + " Select Upload to try again.";

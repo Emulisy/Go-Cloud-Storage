@@ -15,9 +15,12 @@ import (
 type MPUploadInfo struct {
 	FileHash   string `json:"fileHash"`
 	FileSize   int64  `json:"fileSize"`
+	FileName   string `json:"fileName"`
 	UploadID   string `json:"uploadId"`
 	ChunkSize  int64  `json:"chunkSize"`
 	ChunkCount int64  `json:"chunkCount"`
+	Status 	string	`json:"status"`
+	CreatedAt  time.Time	`json:"createdAt"`
 }
 
 var client *redis.Client
