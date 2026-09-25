@@ -1,4 +1,23 @@
 services:
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: cloudstorage-caddy
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./deploy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    restart: unless-stopped
+
   app:
     build:
       context: .
@@ -19,9 +38,6 @@ services:
       R2_ENDPOINT: ${R2_ENDPOINT:?Set R2_ENDPOINT}
       R2_BUCKET: ${R2_BUCKET:?Set R2_BUCKET}
       R2_REGION: ${R2_REGION:-auto}
-
-    ports:
-      - "127.0.0.1:8080:8080"
 
     depends_on:
       mysql:
@@ -85,5 +101,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  caddy_data:
+  caddy_config:
   mysql_data:
   redis_data:
