@@ -1,4 +1,43 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: cloudstorage-app
+
+    environment:
+      MYSQL_ADDR: mysql:3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      REDIS_ADDR: redis:6379
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY}
+      R2_ENDPOINT: ${R2_ENDPOINT:?Set R2_ENDPOINT}
+      R2_BUCKET: ${R2_BUCKET:?Set R2_BUCKET}
+      R2_REGION: ${R2_REGION:-auto}
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+    restart: unless-stopped
+
   mysql:
     image: mysql:8.4
     container_name: cloudstorage-mysql
@@ -15,6 +54,15 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./doc/table.sql:/docker-entrypoint-initdb.d/01-tables.sql:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -33,6 +81,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+    restart: unless-stopped
 
 volumes:
   mysql_data:
