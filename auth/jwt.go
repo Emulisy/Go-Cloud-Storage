@@ -96,9 +96,25 @@ func VerifyToken(tokenString string) (int64, error) {
 
 // RequireAuth verifies the access token and passes the authenticated user to next.
 func RequireAuth(next Handler) http.HandlerFunc {
+	return requireAuth(next, false)
+}
+
+// RequirePageAuth redirects page navigation to sign-in; APIs retain HTTP 401.
+func RequirePageAuth(next Handler) http.HandlerFunc {
+	return requireAuth(next, true)
+}
+
+func requireAuth(next Handler, page bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if page {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		cookie, err := r.Cookie("access_token")
 		if err != nil {
+			if page {
+				http.Redirect(w, r, "/file/signin", http.StatusSeeOther)
+				return
+			}
 			http.Error(
 				w,
 				http.StatusText(http.StatusUnauthorized),
@@ -109,6 +125,10 @@ func RequireAuth(next Handler) http.HandlerFunc {
 
 		userID, err := VerifyToken(cookie.Value)
 		if err != nil {
+			if page {
+				http.Redirect(w, r, "/file/signin", http.StatusSeeOther)
+				return
+			}
 			http.Error(
 				w,
 				http.StatusText(http.StatusUnauthorized),

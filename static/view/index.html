@@ -3,99 +3,80 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>goCloudStorage demo</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
-    main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
-    h1 { margin-top: 0; }
-    form { display: flex; gap: .75rem; align-items: center; }
-    input { flex: 1; min-width: 0; padding: .75rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; }
-    button { padding: .75rem 1rem; border: 0; border-radius: 8px; color: white; background: #245dcc; cursor: pointer; }
-    p { color: #536176; } code { overflow-wrap: anywhere; }
-  </style>
+  <meta name="description" content="Upload files to goCloudStorage, including large files in resumable parts.">
+  <title>Upload · goCloudStorage</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
 </head>
-<body>
-  <main>
-    <h1>goCloudStorage</h1>
-    <p>Files larger than 100 MiB are uploaded in 5 MiB parts.</p>
+<body class="app-page" data-page="upload">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="goCloudStorage home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2"/></svg>
+        </span>
+        <span>goCloudStorage</span>
+      </a>
+      <nav class="sidebar-nav" aria-label="Workspace">
+        <a href="/file/home">My files</a>
+        <a href="/file/upload" aria-current="page">Upload</a>
+        <a href="/file/account">Account</a>
+      </nav>
+      <div class="sidebar-foot">
+        <p class="sidebar-caption">Small files upload in one step. Large files resume from the last completed part.</p>
+        <form class="signout-form" action="/api/sessions/signout" method="post">
+          <button class="button button-secondary button-full" type="submit">Sign out</button>
+        </form>
+      </div>
+    </aside>
 
-    <h2>Upload a file</h2>
-    <form action="/file/upload" method="post" enctype="multipart/form-data">
-      <input type="file" name="file" required>
-      <button type="submit">Upload</button>
-    </form>
-    <progress id="upload-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
-    <p id="upload-status" role="status" aria-live="polite"></p>
+    <main class="app-main">
+      <header class="topbar">
+        <div class="page-title">
+          <h1>Upload</h1>
+          <p>Personal workspace</p>
+        </div>
+        <a class="user-chip" href="/file/account">
+          <span class="user-avatar" data-avatar aria-hidden="true"></span>
+          <span class="user-meta">
+            <strong data-username>Account</strong>
+            <span>Profile &amp; security</span>
+          </span>
+        </a>
+      </header>
 
-    <p><a href="/file/signup">Create a demo account</a></p>
-  </main>
-  <script>
-    const form = document.querySelector("form");
-    const input = form.querySelector('input[type="file"]');
-    const button = form.querySelector("button");
-    const progress = document.querySelector("#upload-progress");
-    const status = document.querySelector("#upload-status");
-    const multipartThreshold = 100 * 1024 * 1024;
+      <div class="content">
+        <p id="page-status" class="status" role="status" aria-live="polite"></p>
+        <div class="welcome-row">
+          <div>
+            <p class="eyebrow">Add a file</p>
+            <h2>Send it into your space.</h2>
+            <p>One file at a time. After it is saved, it appears in <a class="inline-link" href="/file/home">My files</a>.</p>
+          </div>
+        </div>
 
-    async function uploadRequest(url, body) {
-      const response = await fetch(url, {
-        method: "POST",
-        credentials: "same-origin",
-        body
-      });
-      if (response.status === 401) {
-        window.location.assign("/file/signup");
-        throw new Error("Please sign in again.");
-      }
-      if (!response.ok) {
-        throw new Error((await response.text()).trim() || "Upload failed.");
-      }
-      return response.json();
-    }
-
-    form.addEventListener("submit", async (event) => {
-      const file = input.files[0];
-      if (!file || file.size <= multipartThreshold) return;
-      event.preventDefault();
-      button.disabled = true;
-      input.disabled = true;
-      progress.hidden = false;
-      progress.value = 0;
-
-      try {
-        status.textContent = "Calculating file checksum…";
-        const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-        const hash = Array.from(new Uint8Array(digest), byte =>
-          byte.toString(16).padStart(2, "0")
-        ).join("");
-        const upload = await uploadRequest("/file/upload/init", new URLSearchParams({
-          filehash: hash,
-          filename: file.name,
-          filesize: String(file.size)
-        }));
-
-        for (let index = 0; index < upload.chunkCount; index++) {
-          status.textContent = `Uploading part ${index + 1} of ${upload.chunkCount}…`;
-          const start = index * upload.chunkSize;
-          const chunk = file.slice(start, Math.min(start + upload.chunkSize, file.size), "application/octet-stream");
-          await uploadRequest(`/file/upload/part?${new URLSearchParams({
-            filehash: hash, index: String(index)
-          })}`, chunk);
-          progress.value = Math.round(Math.min(start + chunk.size, file.size) / file.size * 100);
-        }
-
-        status.textContent = "Verifying and saving your file…";
-        await uploadRequest(`/file/upload/complete?${new URLSearchParams({
-          filehash: hash
-        })}`);
-        window.location.assign("/file/home");
-      } catch (error) {
-        status.textContent = error.message + " Select Upload to try again.";
-      } finally {
-        button.disabled = false;
-        input.disabled = false;
-      }
-    });
-  </script>
+        <section class="surface upload-page-card" aria-labelledby="upload-title">
+          <form id="upload-form" action="/api/files" method="post" enctype="multipart/form-data">
+            <div class="upload-zone upload-zone-wide" id="drop-zone">
+              <div>
+                <div class="upload-symbol" aria-hidden="true">↑</div>
+                <h3 id="upload-title">Choose a file to upload</h3>
+                <p>Drop a file here or browse your device. Large uploads can resume if interrupted, and are verified before they are saved.</p>
+                <input id="upload-file" type="file" name="file" class="file-picker" aria-label="Choose a file" required>
+                <p id="selected-file" class="field-hint"></p>
+                <button class="button button-primary" type="submit">Upload file</button>
+              </div>
+            </div>
+            <div class="upload-feedback">
+              <progress id="upload-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
+              <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+            </div>
+          </form>
+          <p class="upload-note">Keep this page open until the upload finishes. If a large upload stops, select the same file to continue remaining parts for this account.</p>
+        </section>
+      </div>
+    </main>
+  </div>
 </body>
 </html>

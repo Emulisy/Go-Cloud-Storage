@@ -3,299 +3,129 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Home · goCloudStorage</title>
-  <style>
-    * { box-sizing: border-box; }
-    [hidden] { display: none !important; }
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 4rem auto; padding: 0 1rem; color: #172033; background: #f5f7fb; }
-    main { background: white; border: 1px solid #dfe5ef; border-radius: 14px; padding: 2rem; box-shadow: 0 12px 35px rgba(30, 50, 80, .08); }
-    h1 { margin-top: 0; }
-    dl { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: .8rem; margin: 1.5rem 0; }
-    dt { font-weight: 700; }
-    dd { margin: 0; overflow-wrap: anywhere; }
-    a { color: #245dcc; }
-    .actions { display: flex; gap: 1rem; margin-top: 1.5rem; }
-    .primary { padding: .65rem 1rem; border-radius: 8px; color: white; background: #245dcc; text-decoration: none; }
-    #error { color: #a21d1d; }
-    .files-section { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #dfe5ef; }
-    .files-section h2 { margin-top: 0; }
-    .file-list { list-style: none; padding: 0; margin: 1rem 0; }
-    .file-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid #dfe5ef; }
-    .file-details { min-width: 0; }
-    .file-name { font-weight: 650; overflow-wrap: anywhere; }
-    .file-info { margin: .35rem 0 0; color: #536176; font-size: .9rem; }
-    .file-hash { overflow-wrap: anywhere; }
-    .file-actions { display: flex; align-items: center; gap: .75rem; }
-    .file-actions button { padding: .45rem .7rem; border: 1px solid #bac5d6; border-radius: 7px; background: white; color: #172033; font: inherit; cursor: pointer; }
-    .file-actions button.danger { border-color: #b42318; color: #b42318; }
-    .pager { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; }
-    .pager button { padding: .55rem .8rem; border: 1px solid #bac5d6; border-radius: 8px; background: white; color: #172033; font: inherit; cursor: pointer; }
-    .pager button:disabled { opacity: .5; cursor: default; }
-    #files-error { color: #a21d1d; }
-    @media (max-width: 560px) {
-      body { margin-top: 1.5rem; }
-      .file-list li { align-items: flex-start; flex-direction: column; }
-    }
-  </style>
+  <meta name="description" content="Browse, download, rename, and upload files in goCloudStorage.">
+  <title>My files · goCloudStorage</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
 </head>
-<body>
-  <main>
-    <h1>Your home page</h1>
-    <p id="loading">Loading your account…</p>
-    <p id="error" hidden></p>
-
-    <section id="profile" hidden>
-      <p>Signed in as <strong id="welcome-name"></strong>.</p>
-      <dl>
-        <dt>Username</dt><dd id="username"></dd>
-        <dt>Phone</dt><dd id="phone"></dd>
-        <dt>Email</dt><dd id="email"></dd>
-        <dt>Joined</dt><dd id="signup-at"></dd>
-        <dt>Last active</dt><dd id="last-active"></dd>
-      </dl>
-
-      <div class="actions">
-        <a class="primary" href="/file/upload">Go to file upload</a>
-        <a href="/file/signup">Account page</a>
+<body class="app-page" data-page="files">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="goCloudStorage home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2"/></svg>
+        </span>
+        <span>goCloudStorage</span>
+      </a>
+      <nav class="sidebar-nav" aria-label="Workspace">
+        <a href="/file/home" aria-current="page">My files</a>
+        <a href="/file/upload">Upload</a>
+        <a href="/file/account">Account</a>
+      </nav>
+      <div class="sidebar-foot">
+        <p class="sidebar-caption">Upload, download, rename, and remove files from this workspace.</p>
+        <form class="signout-form" action="/api/sessions/signout" method="post">
+          <button class="button button-secondary button-full" type="submit">Sign out</button>
+        </form>
       </div>
-    </section>
+    </aside>
 
-    <section id="files-section" class="files-section" aria-labelledby="files-heading" hidden>
-      <h2 id="files-heading">Your files</h2>
-      <p id="files-loading" role="status">Loading files…</p>
-      <p id="files-error" role="alert" hidden></p>
-      <p id="files-empty" hidden>You have not uploaded any files yet.</p>
-      <ul id="file-list" class="file-list"></ul>
-      <div id="pager" class="pager" hidden>
-        <button id="previous-page" type="button">Previous</button>
-        <span id="page-label" aria-live="polite"></span>
-        <button id="next-page" type="button">Next</button>
+    <main class="app-main">
+      <header class="topbar">
+        <div class="page-title">
+          <h1>My files</h1>
+          <p>Personal workspace</p>
+        </div>
+        <a class="user-chip" href="/file/account">
+          <span class="user-avatar" data-avatar aria-hidden="true"></span>
+          <span class="user-meta">
+            <strong data-username>Account</strong>
+            <span>Profile &amp; security</span>
+          </span>
+        </a>
+      </header>
+
+      <div class="content">
+        <p id="page-status" class="status" role="status" aria-live="polite"></p>
+        <div class="welcome-row">
+          <div>
+            <p class="eyebrow">Your workspace</p>
+            <h2>Room for your next idea.</h2>
+            <p>Upload a file, then download, rename, or delete it from one list.</p>
+          </div>
+          <a class="button button-primary" href="#upload-card">Upload file <span aria-hidden="true">↑</span></a>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="surface" aria-labelledby="files-title">
+            <div class="surface-header">
+              <div>
+                <h2 id="files-title">My files</h2>
+                <span>Newest first · 20 per page</span>
+              </div>
+              <button id="refresh-files" class="button button-secondary" type="button">Refresh</button>
+            </div>
+            <p id="files-status" class="status padded" role="status" aria-live="polite">Loading files…</p>
+            <div class="file-table-wrap">
+              <table class="file-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Uploaded</th>
+                    <th scope="col">Updated</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="file-rows"></tbody>
+              </table>
+            </div>
+            <div class="pager" id="pager" hidden>
+              <button id="previous-page" class="button button-secondary" type="button">Previous</button>
+              <span id="page-label" aria-live="polite"></span>
+              <button id="next-page" class="button button-secondary" type="button">Next</button>
+            </div>
+          </section>
+
+          <aside class="surface upload-card" id="upload-card" aria-labelledby="upload-title">
+            <form id="upload-form" action="/api/files" method="post" enctype="multipart/form-data">
+              <div class="upload-zone" id="drop-zone">
+                <div>
+                  <div class="upload-symbol" aria-hidden="true">↑</div>
+                  <h3 id="upload-title">Upload a file</h3>
+                  <p>Drop one file here or choose it from your device. Large uploads can resume if interrupted.</p>
+                  <input id="upload-file" type="file" name="file" class="file-picker" aria-label="Choose a file" required>
+                  <p id="selected-file" class="field-hint"></p>
+                  <button class="button button-primary" type="submit">Upload file</button>
+                </div>
+              </div>
+              <div class="upload-feedback">
+                <progress id="upload-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
+                <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+              </div>
+            </form>
+            <p class="upload-note">Keep this page open while the file uploads. If a large upload is interrupted, choose the same file again to resume remaining parts.</p>
+          </aside>
+        </div>
+
+        <dialog id="file-dialog" aria-labelledby="dialog-title">
+          <form id="file-action-form">
+            <h2 id="dialog-title"></h2>
+            <p id="dialog-description"></p>
+            <div class="field" id="rename-field">
+              <label for="rename-input">File name</label>
+              <input id="rename-input" name="name" maxlength="255">
+            </div>
+            <p id="dialog-status" class="status" role="status"></p>
+            <div class="dialog-actions">
+              <button id="dialog-cancel" class="button button-secondary" type="button">Cancel</button>
+              <button id="dialog-submit" class="button button-primary" type="submit">Save</button>
+            </div>
+          </form>
+        </dialog>
       </div>
-    </section>
-  </main>
-
-  <script>
-    const loading = document.querySelector("#loading");
-    const error = document.querySelector("#error");
-    const profile = document.querySelector("#profile");
-    const filesSection = document.querySelector("#files-section");
-    const filesLoading = document.querySelector("#files-loading");
-    const filesError = document.querySelector("#files-error");
-    const filesEmpty = document.querySelector("#files-empty");
-    const fileList = document.querySelector("#file-list");
-    const pager = document.querySelector("#pager");
-    const previousPage = document.querySelector("#previous-page");
-    const nextPage = document.querySelector("#next-page");
-    const pageLabel = document.querySelector("#page-label");
-    const pageSize = 20;
-    let currentPage = 1;
-    let filesBusy = false;
-    let hasNextPage = false;
-
-    function displayDate(value) {
-      if (!value) return "Unknown date";
-      const date = new Date(value);
-      return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString();
-    }
-
-    function renderFiles(files) {
-      const items = files.map((file) => {
-        const item = document.createElement("li");
-        const details = document.createElement("div");
-        details.className = "file-details";
-
-        const name = document.createElement("div");
-        name.className = "file-name";
-        name.textContent = file.fileName || "Unnamed file";
-
-        const info = document.createElement("p");
-        info.className = "file-info";
-        info.textContent = `${Number(file.fileSize).toLocaleString()} bytes · Uploaded ${displayDate(file.uploadAt)}`;
-
-        const hash = document.createElement("div");
-        hash.className = "file-info file-hash";
-        hash.textContent = `SHA-256: ${file.fileHash}`;
-
-        const download = document.createElement("a");
-        download.href = `/file/download?${new URLSearchParams({ id: file.id })}`;
-        download.textContent = "Download";
-        download.setAttribute("aria-label", `Download ${file.fileName || "file"}`);
-
-        const rename = document.createElement("button");
-        rename.type = "button";
-        rename.textContent = "Rename";
-        rename.setAttribute("aria-label", `Rename ${file.fileName || "file"}`);
-        rename.addEventListener("click", async () => {
-          const requestedName = window.prompt("Enter a new file name", file.fileName || "");
-          if (requestedName === null) return;
-
-          const newName = requestedName.trim();
-          if (!newName || newName.length > 255) {
-            filesError.textContent = "File names must contain between 1 and 255 characters.";
-            filesError.hidden = false;
-            return;
-          }
-
-          rename.disabled = true;
-          filesError.hidden = true;
-          try {
-            const response = await fetch("/file/update", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({ id: file.id, name: newName })
-            });
-            if (response.status === 401) {
-              window.location.replace("/file/signup");
-              return;
-            }
-            if (response.status === 404) throw new Error("That file is no longer available.");
-            if (!response.ok) throw new Error((await response.text()).trim() || "Unable to rename the file.");
-
-            const updated = await response.json();
-            file.fileName = updated.fileName;
-            name.textContent = updated.fileName;
-            download.setAttribute("aria-label", `Download ${updated.fileName}`);
-            rename.setAttribute("aria-label", `Rename ${updated.fileName}`);
-          } catch (cause) {
-            filesError.textContent = cause.message;
-            filesError.hidden = false;
-          } finally {
-            rename.disabled = false;
-          }
-        });
-
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "danger";
-        remove.textContent = "Delete";
-        remove.setAttribute("aria-label", `Delete ${file.fileName || "file"}`);
-        remove.addEventListener("click", async () => {
-          if (!window.confirm(`Delete ${file.fileName || "this file"}?`)) return;
-
-          remove.disabled = true;
-          rename.disabled = true;
-          filesError.hidden = true;
-          try {
-            const response = await fetch(`/file/delete?${new URLSearchParams({ id: file.id })}`, {
-              method: "DELETE",
-              credentials: "same-origin"
-            });
-            if (response.status === 401) {
-              window.location.replace("/file/signup");
-              return;
-            }
-            if (response.status === 404) throw new Error("That file is no longer available.");
-            if (!response.ok) throw new Error((await response.text()).trim() || "Unable to delete the file.");
-
-            const targetPage = currentPage > 1 && fileList.children.length === 1
-              ? currentPage - 1
-              : currentPage;
-            await loadFiles(targetPage);
-          } catch (cause) {
-            filesError.textContent = cause.message;
-            filesError.hidden = false;
-          } finally {
-            remove.disabled = false;
-            rename.disabled = false;
-          }
-        });
-
-        const fileActions = document.createElement("div");
-        fileActions.className = "file-actions";
-        fileActions.append(download, rename, remove);
-
-        details.append(name, info, hash);
-        item.append(details, fileActions);
-        return item;
-      });
-
-      fileList.replaceChildren(...items);
-      filesEmpty.hidden = files.length !== 0 || currentPage !== 1;
-      pager.hidden = files.length === 0 && currentPage === 1;
-      pageLabel.textContent = `Page ${currentPage}`;
-      previousPage.disabled = currentPage === 1;
-      hasNextPage = files.length === pageSize;
-      nextPage.disabled = !hasNextPage;
-    }
-
-    async function loadFiles(page) {
-      if (filesBusy) return;
-      filesBusy = true;
-      previousPage.disabled = true;
-      nextPage.disabled = true;
-      filesLoading.hidden = false;
-      filesError.hidden = true;
-
-      try {
-        const response = await fetch(`/file/meta?${new URLSearchParams({ page, pageSize })}`, {
-          credentials: "same-origin",
-          cache: "no-store"
-        });
-        if (response.status === 401) {
-          window.location.replace("/file/signup");
-          return;
-        }
-        if (!response.ok) throw new Error("Unable to load your files.");
-
-        const files = await response.json();
-        if (!Array.isArray(files)) throw new Error("The file list has an unexpected format.");
-        if (page > 1 && files.length === 0) {
-          hasNextPage = false;
-          previousPage.disabled = currentPage === 1;
-          nextPage.disabled = true;
-          return;
-        }
-
-        currentPage = page;
-        renderFiles(files);
-      } catch (cause) {
-        filesError.textContent = cause.message;
-        filesError.hidden = false;
-        previousPage.disabled = currentPage === 1;
-        nextPage.disabled = !hasNextPage;
-      } finally {
-        filesBusy = false;
-        filesLoading.hidden = true;
-      }
-    }
-
-    previousPage.addEventListener("click", () => loadFiles(currentPage - 1));
-    nextPage.addEventListener("click", () => loadFiles(currentPage + 1));
-
-    async function loadUser() {
-      const response = await fetch("/file/user/info", {
-        credentials: "same-origin",
-        cache: "no-store"
-      });
-
-      if (response.status === 401) {
-        window.location.replace("/file/signup");
-        return;
-      }
-      if (!response.ok) {
-        throw new Error("Unable to load your account information.");
-      }
-
-      const user = await response.json();
-      document.querySelector("#welcome-name").textContent = user.username;
-      document.querySelector("#username").textContent = user.username;
-      document.querySelector("#phone").textContent = user.phone || "Not provided";
-      document.querySelector("#email").textContent = user.email || "Not provided";
-      document.querySelector("#signup-at").textContent = new Date(user.signupAt).toLocaleString();
-      document.querySelector("#last-active").textContent = new Date(user.lastActive).toLocaleString();
-
-      loading.hidden = true;
-      profile.hidden = false;
-      filesSection.hidden = false;
-      await loadFiles(1);
-    }
-
-    loadUser().catch((cause) => {
-      loading.hidden = true;
-      error.textContent = cause.message;
-      error.hidden = false;
-    });
-  </script>
+    </main>
+  </div>
 </body>
 </html>

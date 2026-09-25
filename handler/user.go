@@ -135,7 +135,7 @@ func SignOutHandler(
         Path:     "/",
         MaxAge:   -1,
         HttpOnly: true,
-        Secure:   true,
+        Secure:   r.TLS != nil,
         SameSite: http.SameSiteLaxMode,
     })
 

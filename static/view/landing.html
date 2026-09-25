@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Your personal space to upload and manage files.">
+  <title>goCloudStorage · Your files, in your orbit</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body class="landing-page">
+  <header class="landing-header">
+    <a class="brand" href="#intro" aria-label="goCloudStorage home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </span>
+      <span>goCloudStorage</span>
+    </a>
+    <nav aria-label="Landing page actions">
+      <a class="text-link" href="#manage">Explore features</a>
+      <a class="text-link" href="/file/signin">Sign in</a>
+      <a class="button button-primary" href="/file/signup">Create account</a>
+    </nav>
+  </header>
+
+  <main class="story-rail" data-story-rail aria-label="goCloudStorage feature story">
+    <section class="story-panel" id="intro" data-story-panel aria-labelledby="intro-title">
+      <div class="panel-inner">
+        <div class="panel-copy">
+          <p class="panel-kicker">Private by design</p>
+          <h1 id="intro-title">Your files, in your orbit.</h1>
+          <p class="lead">A clean place to upload, protect, and manage the files that matter—without the clutter.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="/file/signup">
+              Start storing
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+            <a class="button button-secondary" href="/file/home">Open your files</a>
+          </div>
+        </div>
+        <div class="panel-visual" aria-hidden="true">
+          <div class="orbit"></div>
+          <div class="visual-card hero-drive-card">
+            <div class="visual-card-bar"><span class="mini-dots"><i></i><i></i><i></i></span></div>
+            <div class="mini-file-row"><span class="mini-file-icon">D</span><span class="mini-lines"><b></b><span></span></span><span class="mini-tag"></span></div>
+            <div class="mini-file-row"><span class="mini-file-icon">P</span><span class="mini-lines"><b></b><span></span></span><span class="mini-tag"></span></div>
+            <div class="mini-file-row"><span class="mini-file-icon">V</span><span class="mini-lines"><b></b><span></span></span><span class="mini-tag"></span></div>
+          </div>
+          <div class="visual-card floating-stat"><span class="stat-ring"></span><div><strong>Your files</strong><span>In one place</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="story-panel is-dark" id="secure" data-story-panel aria-labelledby="secure-title">
+      <div class="panel-inner">
+        <div class="panel-copy">
+          <span class="panel-index">01 / 05</span>
+          <p class="panel-kicker">Account security</p>
+          <h2 id="secure-title">Only you hold the key.</h2>
+          <p class="lead">Protected sessions, hashed passwords, and ownership checks keep every file attached to the right account.</p>
+          <div class="hero-actions"><a class="button button-yellow" href="/file/signin">Sign in securely</a></div>
+        </div>
+        <div class="panel-visual" aria-hidden="true">
+          <div class="orbit"></div>
+          <div class="visual-card security-card">
+            <div class="security-shield"><svg width="35" height="35" viewBox="0 0 24 24" fill="none"><path d="M12 3 5.5 5.6v5.8c0 4.3 2.7 7.8 6.5 9.6 3.8-1.8 6.5-5.3 6.5-9.6V5.6L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="m9.3 12 1.8 1.8 3.8-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <h3>Account protected</h3><p>Your private space is ready.</p>
+            <div class="security-list"><div class="security-line"><span class="check-dot">✓</span>Secure password storage</div><div class="security-line"><span class="check-dot">✓</span>Authenticated file access</div><div class="security-line"><span class="check-dot">✓</span>24-hour protected sessions</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="story-panel" id="upload" data-story-panel aria-labelledby="upload-title">
+      <div class="panel-inner">
+        <div class="panel-copy">
+          <span class="panel-index">02 / 05</span>
+          <p class="panel-kicker">Built for big files</p>
+          <h2 id="upload-title">Upload without the wait anxiety.</h2>
+          <p class="lead">Small files move in one step. Larger files are divided into resilient 5 MiB parts, verified, then rebuilt safely.</p>
+          <div class="hero-actions"><a class="button button-primary" href="/file/upload">See upload space</a></div>
+        </div>
+        <div class="panel-visual upload-visual" aria-hidden="true">
+          <div class="upload-ring"><div class="upload-core"><strong>Step by step</strong><span>Large-file uploads</span></div></div>
+          <span class="chunk chunk-one"></span><span class="chunk chunk-two"></span><span class="chunk chunk-three"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="story-panel is-dark" id="integrity" data-story-panel aria-labelledby="integrity-title">
+      <div class="panel-inner">
+        <div class="panel-copy">
+          <span class="panel-index">03 / 05</span>
+          <p class="panel-kicker">Smart storage</p>
+          <h2 id="integrity-title">One file. One trusted fingerprint.</h2>
+          <p class="lead">SHA-256 verification checks integrity while content-aware storage avoids keeping duplicate physical files.</p>
+        </div>
+        <div class="panel-visual hash-visual" aria-hidden="true">
+          <div class="hash-stack">
+            <div class="hash-layer"><span class="hash-code">#1</span><span class="hash-text"><strong>File fingerprint</strong><span>Calculated from your content</span></span></div>
+            <div class="hash-layer"><span class="hash-code">✓</span><span class="hash-text"><strong>Content verified</strong><span>SHA-256 matched</span></span></div>
+            <div class="hash-layer"><span class="hash-code">1×</span><span class="hash-text"><strong>Stored once</strong><span>duplicate avoided</span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="story-panel" id="manage" data-story-panel aria-labelledby="manage-title">
+      <div class="panel-inner">
+        <div class="panel-copy">
+          <span class="panel-index">04 / 05</span>
+          <p class="panel-kicker">File control</p>
+          <h2 id="manage-title">Everything important, nothing in the way.</h2>
+          <p class="lead">Review metadata, rename clearly, download instantly, and remove files from one focused workspace.</p>
+          <div class="hero-actions"><a class="button button-primary" href="/file/upload">Upload a file</a></div>
+        </div>
+        <div class="panel-visual manage-visual" aria-hidden="true">
+          <div class="manage-row"><span class="manage-icon">↓</span><span class="manage-name"><strong>Download your files</strong><span>Save a copy to your device</span></span></div>
+          <div class="manage-row"><span class="manage-icon">Aa</span><span class="manage-name"><strong>Rename your files</strong><span>Keep names clear and useful</span></span></div>
+          <div class="manage-row"><span class="manage-icon">×</span><span class="manage-name"><strong>Remove unwanted files</strong><span>Confirm each deletion</span></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="story-panel is-dark" id="account" data-story-panel aria-labelledby="account-title">
+      <div class="panel-inner">
+        <div class="panel-copy">
+          <span class="panel-index">05 / 05</span>
+          <p class="panel-kicker">Your account</p>
+          <h2 id="account-title">A calmer place for your digital work.</h2>
+          <p class="lead">Keep profile and security details close, then get back to the files that move your work forward.</p>
+          <div class="hero-actions"><a class="button button-yellow" href="/file/signup">Create your space</a><a class="button button-secondary" href="/file/account">Your account</a></div>
+        </div>
+        <div class="panel-visual account-visual" aria-hidden="true">
+          <div class="visual-card account-card-demo"><div class="avatar-demo">✓</div><h3>Your account</h3><p>Personal cloud workspace</p><div class="profile-fields"><span class="profile-field"></span><span class="profile-field"></span><span class="profile-field"></span></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="story-progress" aria-label="Feature panels">
+    <a href="#intro" data-panel-link aria-label="Introduction" aria-current="true"></a>
+    <a href="#secure" data-panel-link aria-label="Security"></a>
+    <a href="#upload" data-panel-link aria-label="Uploads"></a>
+    <a href="#integrity" data-panel-link aria-label="Integrity"></a>
+    <a href="#manage" data-panel-link aria-label="File management"></a>
+    <a href="#account" data-panel-link aria-label="Account"></a>
+  </nav>
+  <div class="scroll-hint" aria-hidden="true"><span>Scroll sideways to explore</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <script src="/assets/landing.js"></script>
+</body>
+</html>

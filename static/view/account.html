@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Update your goCloudStorage username, email, and password.">
+  <title>Account · goCloudStorage</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body class="app-page" data-page="account">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="goCloudStorage home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2"/></svg>
+        </span>
+        <span>goCloudStorage</span>
+      </a>
+      <nav class="sidebar-nav" aria-label="Workspace">
+        <a href="/file/home">My files</a>
+        <a href="/file/upload">Upload</a>
+        <a href="/file/account" aria-current="page">Account</a>
+      </nav>
+      <div class="sidebar-foot">
+        <p class="sidebar-caption">Change the name, email, and password used with this account.</p>
+        <form class="signout-form" action="/api/sessions/signout" method="post">
+          <button class="button button-secondary button-full" type="submit">Sign out</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <header class="topbar">
+        <div class="page-title">
+          <h1>Account</h1>
+          <p>Personal workspace</p>
+        </div>
+        <a class="user-chip" href="/file/account">
+          <span class="user-avatar" data-avatar aria-hidden="true"></span>
+          <span class="user-meta">
+            <strong data-username>Account</strong>
+            <span>Profile &amp; security</span>
+          </span>
+        </a>
+      </header>
+
+      <div class="content">
+        <p id="page-status" class="status" role="status" aria-live="polite"></p>
+        <div class="welcome-row">
+          <div>
+            <p class="eyebrow">Account controls</p>
+            <h2>Your profile, your rules.</h2>
+            <p>Keep your display name, sign-in email, and password current.</p>
+          </div>
+        </div>
+
+        <div class="account-layout">
+          <section class="surface account-card">
+            <div class="surface-header">
+              <div>
+                <h2>Profile details</h2>
+                <span>Your name and sign-in email</span>
+              </div>
+            </div>
+            <div class="account-card-body">
+              <div class="profile-heading">
+                <span class="profile-avatar" data-avatar aria-hidden="true"></span>
+                <div>
+                  <h2 data-username></h2>
+                  <p id="account-email"></p>
+                </div>
+              </div>
+
+              <form class="form-stack account-form" data-update="name" id="name-form">
+                <fieldset disabled>
+                  <div class="field">
+                    <label for="profile-name">Display name</label>
+                    <input id="profile-name" name="userName" minlength="3" maxlength="64" autocomplete="nickname" required>
+                    <p class="field-hint">Use 3–64 bytes.</p>
+                  </div>
+                  <button class="button button-primary" type="submit">Save name</button>
+                </fieldset>
+                <p class="status" role="status" aria-live="polite"></p>
+              </form>
+
+              <form class="form-stack account-form" data-update="email" id="email-form">
+                <fieldset disabled>
+                  <div class="field">
+                    <label for="profile-email">Email address</label>
+                    <input id="profile-email" name="email" type="email" maxlength="254" autocomplete="email" required>
+                    <p class="field-hint">Use this address the next time you sign in.</p>
+                  </div>
+                  <button class="button button-primary" type="submit">Save email</button>
+                </fieldset>
+                <p class="status" role="status" aria-live="polite"></p>
+              </form>
+            </div>
+          </section>
+
+          <div class="account-side">
+            <section class="surface account-card">
+              <div class="surface-header">
+                <div>
+                  <h2>Account activity</h2>
+                  <span>Dates from your profile</span>
+                </div>
+              </div>
+              <div class="account-card-body">
+                <div class="account-facts">
+                  <div class="fact-row"><span>Signed up</span><strong id="account-signup">—</strong></div>
+                  <div class="fact-row"><span>Last active</span><strong id="account-active">—</strong></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="surface account-card">
+              <div class="surface-header">
+                <div>
+                  <h2>Change password</h2>
+                  <span>Choose a password only you know</span>
+                </div>
+              </div>
+              <div class="account-card-body">
+                <form class="form-stack account-form" data-update="password" id="password-form">
+                  <fieldset disabled>
+                    <div class="field">
+                      <label for="current-password">Current password</label>
+                      <input id="current-password" type="password" name="currentPwd" autocomplete="current-password" minlength="5" maxlength="72" required>
+                    </div>
+                    <div class="field">
+                      <label for="new-password">New password</label>
+                      <input id="new-password" type="password" name="newPwd" autocomplete="new-password" minlength="5" maxlength="72" required>
+                      <p class="field-hint">Use 5–72 bytes. A longer passphrase is easier to remember.</p>
+                    </div>
+                    <div class="field">
+                      <label for="confirm-password">Confirm new password</label>
+                      <input id="confirm-password" type="password" name="confirmPassword" autocomplete="new-password" required>
+                    </div>
+                    <button class="button button-primary" type="submit">Update password</button>
+                  </fieldset>
+                  <p class="status" role="status" aria-live="polite"></p>
+                </form>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

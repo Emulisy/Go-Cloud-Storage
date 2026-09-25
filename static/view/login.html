@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sign in to the goCloudStorage application.">
+  <title>Sign in · goCloudStorage</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <main class="auth-page">
+    <aside class="auth-aside">
+      <a class="brand" href="/" aria-label="Back to goCloudStorage home">
+        <span class="brand-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <span>goCloudStorage</span>
+      </a>
+      <div class="auth-message">
+        <p class="panel-kicker">Welcome back</p>
+        <h1>Pick up where your files left off.</h1>
+        <p>Your private workspace, recent uploads, and file controls are one secure sign-in away.</p>
+      </div>
+      <div class="auth-proof" aria-label="Service benefits"><span class="proof-pill"><i></i>Private access</span><span class="proof-pill"><i></i>Verified uploads</span><span class="proof-pill"><i></i>Simple control</span></div>
+    </aside>
+
+    <section class="auth-main" aria-labelledby="login-heading">
+      <a class="back-home" href="/">← Back to home</a>
+      <div class="auth-box">
+        <p class="eyebrow">Account access</p>
+        <h2 id="login-heading">Sign in</h2>
+        <p class="auth-intro">Enter the details connected to your cloud space.</p>
+        <form id="auth-form" class="form-stack" action="/api/sessions" method="post" data-mode="login">
+          <div class="field">
+            <label for="auth-email">Email address</label>
+            <input id="auth-email" name="email" type="email" maxlength="254" autocomplete="email" required>
+          </div>
+          <div class="field">
+            <label for="login-password">Password</label>
+            <input id="login-password" minlength="5" maxlength="72" name="userPwd" type="password" autocomplete="current-password" required>
+          </div>
+          <button class="button button-primary auth-submit" type="submit">Continue to files <span aria-hidden="true">→</span></button>
+          <p id="auth-status" class="status" role="status" aria-live="polite"></p>
+        </form>
+        <p class="auth-switch">New to goCloudStorage? <a class="inline-link" href="/file/signup">Create an account</a></p>
+      </div>
+    </section>
+  </main>
+<script src="/assets/app.js" defer></script></body>
+</html>

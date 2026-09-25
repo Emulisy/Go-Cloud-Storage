@@ -48,13 +48,13 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sessions/signout", handler.SignOutHandler)
 
 	// Protected routes.
-	mux.HandleFunc("GET /file/account", auth.RequireAuth(handler.AccountPageHandler))
-	mux.HandleFunc("GET /file/home", auth.RequireAuth(handler.HomeHandler))
+	mux.HandleFunc("GET /file/account", auth.RequirePageAuth(handler.AccountPageHandler))
+	mux.HandleFunc("GET /file/home", auth.RequirePageAuth(handler.HomeHandler))
 	mux.HandleFunc("GET /api/users/me", auth.RequireAuth(handler.UserInfoHandler))
 	mux.HandleFunc("PATCH /api/users/me/name", auth.RequireAuth(handler.UpdateUserNameHandler))
 	mux.HandleFunc("PATCH /api/users/me/password", auth.RequireAuth(handler.UpdateUserPwdHandler))
 	mux.HandleFunc("PATCH /api/users/me/email", auth.RequireAuth(handler.UpdateUserEmailHandler))
-	mux.HandleFunc("GET /file/upload", auth.RequireAuth(handler.UploadHandler))
+	mux.HandleFunc("GET /file/upload", auth.RequirePageAuth(handler.UploadPageHandler))
 	mux.HandleFunc("POST /api/files", auth.RequireAuth(handler.UploadHandler))
 	mux.HandleFunc("GET /api/uploads/{filehash}", auth.RequireAuth(handler.UploadStatusHandler))
 	mux.HandleFunc("POST /api/uploads", auth.RequireAuth(handler.InitialMPUploadHandler))
