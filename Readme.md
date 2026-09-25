@@ -247,7 +247,7 @@ The R2 endpoint must be an HTTPS service URL without a bucket path. The supplied
 ### Run locally
 
 ```sh
-docker compose up -d
+docker compose up -d mysql redis
 docker compose ps
 docker compose logs mysql redis
 ```
@@ -263,7 +263,24 @@ Open [GoCloudStorage](http://localhost:8080) and register an account. Keep the w
 
 MySQL loads `doc/table.sql` when its data volume is first initialized. Existing volumes are not automatically migrated after schema changes. To stop services while retaining data, run `docker compose stop`.
 
-The local setup runs Go on the host. Compose starts only MySQL and Redis. A multi-stage application `dockerfile` is provided, but deploying the application in a container requires adapting the currently hardcoded MySQL address (`127.0.0.1:3306`) and configuring service networking.
+The local setup above runs Go on the host. The complete Compose stack runs with `docker compose up -d`: Caddy publishes ports `80` and `443`, the application is reachable only through the private Compose network, and MySQL and Redis remain bound to loopback.
+
+## Deploy to an Ubuntu Azure VM
+
+The production deployment runs Caddy, the Go application, MySQL, and Redis in Docker Compose. Caddy obtains HTTPS certificates automatically for `emulisygocloud.southeastasia.cloudapp.azure.com` and proxies to the application over the private Compose network. Only SSH, HTTP, and HTTPS should be allowed by the Azure Network Security Group; do not open ports `8080`, `3306`, or `6379`.
+
+On the VM, clone the repository and run the one-time setup:
+
+```sh
+git clone YOUR_REPOSITORY_URL goCloudStorage
+cd goCloudStorage
+sudo bash deploy/setup-server.sh
+nano /opt/gocloudstorage/.env
+```
+
+Use the environment variables shown above in `/opt/gocloudstorage/.env`, then log out and back in so Docker group membership is active.
+
+Add `AZURE_VM_HOST`, `AZURE_VM_USER`, `AZURE_VM_SSH_PRIVATE_KEY`, and `AZURE_VM_SSH_KNOWN_HOSTS` as GitHub Actions secrets. Generate the known-hosts value from a trusted machine with `ssh-keyscan -H emulisygocloud.southeastasia.cloudapp.azure.com`, verify its fingerprint against the VM, and save the verified output. Pushes to `main` synchronize the repository while preserving the VM's `.env`, validate the Caddy configuration, and restart the complete Compose stack. The workflow can also be started manually with **Run workflow** in GitHub Actions.
 
 ## Project structure
 
@@ -280,8 +297,10 @@ The local setup runs Go on the host. Compose starts only MySQL and Redis. A mult
 |   |-- view/            # HTML pages
 |   `-- assets/          # CSS, JavaScript, and favicon
 |-- doc/table.sql        # Database schema
-|-- compose.yaml         # Local MySQL and Redis services
+|-- compose.yaml         # Caddy, application, MySQL, and Redis services
 |-- dockerfile           # Multi-stage application image
+|-- deploy/              # Caddy configuration and Ubuntu setup script
+|-- .github/workflows/   # Continuous deployment workflow
 `-- go.mod               # Go version and dependencies
 ```
 
