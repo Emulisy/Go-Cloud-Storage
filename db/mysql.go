@@ -17,7 +17,10 @@ func InitDB() error {
 	cfg.User = os.Getenv("MYSQL_USER")
 	cfg.Passwd = os.Getenv("MYSQL_PASSWORD")
 	cfg.Net = "tcp"
-	cfg.Addr = "127.0.0.1:3306"
+	cfg.Addr = os.Getenv("MYSQL_ADDR")
+	if cfg.Addr == "" {
+		cfg.Addr = "127.0.0.1:3306"
+	}
 	cfg.DBName = os.Getenv("MYSQL_DATABASE")
 	cfg.ParseTime = true
 	cfg.Loc = time.UTC
