@@ -54,7 +54,7 @@ jobs:
           docker compose config --quiet
           docker compose pull caddy mysql redis
           docker compose run --rm --no-deps caddy \
-            validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           docker compose up -d --build --remove-orphans --wait --wait-timeout 120
           docker compose ps
           REMOTE
