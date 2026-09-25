@@ -571,6 +571,76 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	}
 }
 
+// UploadCancelHandler aborts an active R2 multipart upload and removes its
+// resumable upload state.
+func UploadCancelHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+	user auth.User,
+) {
+	if r.Method != http.MethodDelete {
+		w.Header().Set("Allow", "DELETE")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	fileHash := strings.ToLower(strings.TrimSpace(r.PathValue("filehash")))
+	if len(fileHash) != 64 {
+		http.Error(w, "Invalid file hash", http.StatusBadRequest)
+		return
+	}
+	if _, err := hex.DecodeString(fileHash); err != nil {
+		http.Error(w, "Invalid file hash", http.StatusBadRequest)
+		return
+	}
+
+	redisClient := cache.RedisClient()
+	if redisClient == nil {
+		http.Error(w, "Redis is not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	userID := strconv.FormatInt(user.UserID, 10)
+	sessionKey := "mpupload:session:userid:" + userID + ":" + fileHash
+	chunkKey := "mpupload:chunks:userid:" + userID + ":" + fileHash
+
+	info, err := redisClient.HGetAll(r.Context(), sessionKey).Result()
+	if err != nil {
+		http.Error(w, "Unable to retrieve upload session", http.StatusInternalServerError)
+		return
+	}
+	if len(info) == 0 || info["user_id"] != userID || info["file_hash"] != fileHash {
+		http.Error(w, "Upload session not found", http.StatusNotFound)
+		return
+	}
+	if info["status"] != "uploading" {
+		http.Error(w, "Upload is not active", http.StatusConflict)
+		return
+	}
+	if info["r2_upload_id"] == "" || info["object_key"] == "" {
+		http.Error(w, "Upload session has no R2 upload", http.StatusConflict)
+		return
+	}
+
+	// Finish cleanup even if the client disconnects after requesting cancellation.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+	defer cancel()
+
+	if err := storage.R2().AbortMultipartUpload(ctx, info["object_key"], info["r2_upload_id"]); err != nil {
+		log.Printf("Abort R2 multipart upload: %v", err)
+		http.Error(w, "Unable to cancel upload", http.StatusInternalServerError)
+		return
+	}
+
+	if err := redisClient.Del(ctx, sessionKey, chunkKey).Err(); err != nil {
+		log.Printf("Remove cancelled multipart upload state: %v", err)
+		http.Error(w, "Unable to remove upload session", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // check the upload status
 func UploadStatusHandler(
 	w http.ResponseWriter,
