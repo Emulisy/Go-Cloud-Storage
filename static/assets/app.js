@@ -136,6 +136,7 @@
       node.textContent = Array.from(user.username || "").slice(0, 2).join("").toUpperCase();
     });
     if ($("#account-email")) $("#account-email").textContent = user.email;
+    document.querySelectorAll(".profile-email").forEach(node => { node.textContent = user.email; });
     if ($("#account-signup")) $("#account-signup").textContent = dateLabel(user.signupAt);
     if ($("#account-active")) $("#account-active").textContent = dateLabel(user.lastActive);
   }
@@ -327,7 +328,14 @@
   const uploadForm = $("#upload-form"), fileInput = $("#upload-file"), progress = $("#upload-progress");
   if (!uploadForm) return;
 
-  let selectedFile = null, uploading = false;
+  const cancelUploadButton = $("#cancel-upload");
+  let selectedFile = null, uploading = false, activeMultipart = null;
+
+  function cancelledUploadError() {
+    const error = new Error("Upload cancelled.");
+    error.name = "UploadCancelled";
+    return error;
+  }
 
   function selectFile(file) {
     selectedFile = file || null;
@@ -370,6 +378,13 @@
     }
     status($("#upload-status"), "Calculating SHA-256…");
     const hash = await sha256Hex(file);
+    status($("#upload-status"), "Checking for existing file…");
+    const fastUpload = await (await request("/api/files/fast", {
+      method: "POST",
+      body: new URLSearchParams({ filehash: hash, filename: file.name, filesize: String(file.size) })
+    })).json();
+    if (fastUpload.reused) return;
+
     const upload = await (await request("/api/uploads", {
       method: "POST",
       body: new URLSearchParams({ filehash: hash, filename: file.name, filesize: String(file.size) })
@@ -380,29 +395,58 @@
         chunkSize <= 0 || chunkCount !== Math.ceil(file.size / chunkSize)) {
       throw new Error("Unable to start the large-file upload.");
     }
-    const info = await (await request(`/api/uploads/${hash}`)).json();
-    if (!Array.isArray(info.uploadedChunks) || info.chunkCount !== chunkCount ||
-        info.uploadedChunks.some(index => !Number.isInteger(index) || index < 0 || index >= chunkCount)) {
-      throw new Error("Unable to read upload progress. Please retry.");
-    }
-    const completed = new Set(info.uploadedChunks);
-    if (completed.size) status($("#upload-status"), `Resuming… ${completed.size} of ${chunkCount} parts already stored.`);
-    for (let index = 0; index < chunkCount; index++) {
-      progress.value = completed.size / chunkCount * 100;
-      if (!completed.has(index)) {
-        status($("#upload-status"), `Uploading part ${index + 1} of ${chunkCount}…`);
-        await request(`/api/uploads/${hash}/parts/${index}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: file.slice(index * chunkSize, Math.min((index + 1) * chunkSize, file.size))
-        });
-        completed.add(index);
+    const multipart = { hash, controller: new AbortController(), cancelRequested: false };
+    activeMultipart = multipart;
+    cancelUploadButton.hidden = false;
+    cancelUploadButton.disabled = false;
+
+    try {
+      const info = await (await request(`/api/uploads/${hash}`, { signal: multipart.controller.signal })).json();
+      if (!Array.isArray(info.uploadedChunks) || info.chunkCount !== chunkCount ||
+          info.uploadedChunks.some(index => !Number.isInteger(index) || index < 0 || index >= chunkCount)) {
+        throw new Error("Unable to read upload progress. Please retry.");
       }
-      progress.value = completed.size / chunkCount * 100;
+      const completed = new Set(info.uploadedChunks);
+      if (completed.size) status($("#upload-status"), `Resuming… ${completed.size} of ${chunkCount} parts already stored.`);
+      for (let index = 0; index < chunkCount; index++) {
+        progress.value = completed.size / chunkCount * 100;
+        if (!completed.has(index)) {
+          status($("#upload-status"), `Uploading part ${index + 1} of ${chunkCount}…`);
+          await request(`/api/uploads/${hash}/parts/${index}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: file.slice(index * chunkSize, Math.min((index + 1) * chunkSize, file.size)),
+            signal: multipart.controller.signal
+          });
+          completed.add(index);
+        }
+        progress.value = completed.size / chunkCount * 100;
+      }
+    } catch (error) {
+      if (!multipart.cancelRequested) throw error;
+      try {
+        await request(`/api/uploads/${hash}`, { method: "DELETE" });
+      } catch (cleanupError) {
+        throw new Error(`Upload stopped, but cancellation cleanup failed: ${cleanupError.message}`);
+      }
+      throw cancelledUploadError();
+    } finally {
+      if (activeMultipart === multipart) activeMultipart = null;
+      cancelUploadButton.hidden = true;
+      cancelUploadButton.disabled = false;
     }
+
     status($("#upload-status"), "Verifying and saving your file…");
     await request(`/api/uploads/${hash}/completion`, { method: "POST" });
   }
+
+  cancelUploadButton.addEventListener("click", () => {
+    if (!activeMultipart || activeMultipart.cancelRequested) return;
+    activeMultipart.cancelRequested = true;
+    cancelUploadButton.disabled = true;
+    status($("#upload-status"), "Cancelling upload…");
+    activeMultipart.controller.abort();
+  });
 
   fileInput.addEventListener("change", () => selectFile(fileInput.files[0]));
   const zone = $("#drop-zone");
@@ -444,7 +488,13 @@
       status($("#selected-file"));
       if (pageName === "files") await loadFiles(1);
     } catch (error) {
-      status($("#upload-status"), error.message + " Choose Upload file to retry.", true);
+      if (error.name === "UploadCancelled") {
+        progress.hidden = true;
+        progress.value = 0;
+        status($("#upload-status"), error.message);
+      } else {
+        status($("#upload-status"), error.message + " Choose Upload file to retry.", true);
+      }
     } finally {
       uploading = false;
       fileInput.disabled = $('button[type="submit"]', uploadForm).disabled = false;

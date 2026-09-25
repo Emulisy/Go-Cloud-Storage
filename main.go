@@ -68,6 +68,7 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/uploads", auth.RequireAuth(handler.InitialMPUploadHandler))
 	mux.HandleFunc("PUT /api/uploads/{filehash}/parts/{index}", auth.RequireAuth(handler.UploadPartHandler))
 	mux.HandleFunc("POST /api/uploads/{filehash}/completion", auth.RequireAuth(handler.UploadCompleteHandler))
+	mux.HandleFunc("DELETE /api/uploads/{filehash}", auth.RequireAuth(handler.UploadCancelHandler))
 	mux.HandleFunc("GET /api/files", auth.RequireAuth(handler.GetFileMetaHandler))
 	mux.HandleFunc("GET /api/files/{id}/content", auth.RequireAuth(handler.DownloadHandler))
 	mux.HandleFunc("PATCH /api/files/{id}", auth.RequireAuth(handler.FileUpdateHandler))
