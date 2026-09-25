@@ -14,6 +14,7 @@ services:
 
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./doc/table.sql:/docker-entrypoint-initdb.d/01-tables.sql:ro
 
   redis:
     image: redis:7-alpine

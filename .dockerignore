@@ -1,0 +1,30 @@
+# Credentials and local configuration must never enter the build context.
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+
+# Version control and editor files.
+.git
+.github
+.gitignore
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Local artifacts and files that are not needed to compile or run the app.
+bin/
+dist/
+tmp/
+coverage/
+*.exe
+*.test
+*.out
+*.log
+compose*.yaml
+compose*.yml
+Readme.md
+doc/

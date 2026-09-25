@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"goCloudStorage/auth"
 	"goCloudStorage/cache"
@@ -9,13 +10,14 @@ import (
 	"goCloudStorage/storage"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Load local development credentials from .env.
-	if err := godotenv.Load(); err != nil {
+	// Optionally load local defaults; existing environment variables take priority.
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Fatal("Failed to load .env: ", err)
 	}
 
