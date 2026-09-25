@@ -6,6 +6,7 @@ import (
 	"goCloudStorage/cache"
 	"goCloudStorage/db"
 	"goCloudStorage/handler"
+	"goCloudStorage/storage"
 	"log"
 	"net/http"
 
@@ -28,6 +29,10 @@ func main() {
 		log.Fatal(err)
 	}
 	defer cache.CloseRedis()
+
+	if err := storage.InitR2(); err != nil {
+		log.Fatal(err)
+	}
 
 	registerRoutes(http.DefaultServeMux)
 
@@ -56,6 +61,7 @@ func registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/users/me/email", auth.RequireAuth(handler.UpdateUserEmailHandler))
 	mux.HandleFunc("GET /file/upload", auth.RequirePageAuth(handler.UploadPageHandler))
 	mux.HandleFunc("POST /api/files", auth.RequireAuth(handler.UploadHandler))
+	mux.HandleFunc("POST /api/files/fast", auth.RequireAuth(handler.TryFastUploadHandler))
 	mux.HandleFunc("GET /api/uploads/{filehash}", auth.RequireAuth(handler.UploadStatusHandler))
 	mux.HandleFunc("POST /api/uploads", auth.RequireAuth(handler.InitialMPUploadHandler))
 	mux.HandleFunc("PUT /api/uploads/{filehash}/parts/{index}", auth.RequireAuth(handler.UploadPartHandler))

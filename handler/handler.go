@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,9 +12,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"goCloudStorage/auth"
 	"goCloudStorage/db"
+	"goCloudStorage/storage"
 )
 
 // GetFileMetaHandler returns the signed-in user's file metadata as JSON.
@@ -66,7 +69,7 @@ func GetFileMetaHandler(w http.ResponseWriter, r *http.Request, user auth.User) 
 	_, _ = w.Write(data)
 }
 
-// Download the file from cloud
+// DownloadHandler streams an owned R2 object or an older local file.
 func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -92,14 +95,34 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 
-	file, err := os.Open(download.FileAddr)
+	var file io.ReadCloser
+	var size int64 = -1
+	if key, isR2 := strings.CutPrefix(download.FileAddr, "r2://"); isR2 {
+		var object *storage.Object
+		object, err = storage.R2().GetObject(r.Context(), key)
+		if err == nil {
+			file = object.Body
+			size = object.Size
+		}
+	} else {
+		file, err = os.Open(download.FileAddr)
+	}
 	if err != nil {
-		http.Error(w, "Can't retreive file from location", http.StatusInternalServerError)
+		if errors.Is(err, storage.ErrObjectNotFound) || errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("failed to open download %q: %v", download.FileAddr, err)
+		http.Error(w, "Unable to download file", http.StatusInternalServerError)
 		return
 	}
 	defer file.Close()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	if size >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	}
 
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(
 		"attachment",
@@ -108,8 +131,9 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 
 	_, err = io.Copy(w, file)
 	if err != nil {
-		http.Error(w, "Failed to send file", http.StatusInternalServerError)
-		return
+		log.Printf("failed to stream download %q: %v", download.FileAddr, err)
+		// Abort a partial response instead of appending error text to the file.
+		panic(http.ErrAbortHandler)
 	}
 }
 
@@ -194,7 +218,7 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	}
 
 	if cleanupPath != "" {
-		if err := os.Remove(cleanupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := removeStoredFile(r.Context(), cleanupPath); err != nil {
 			// The database deletion is already committed, so this is an orphaned-file
 			// cleanup failure rather than a failed user deletion.
 			log.Printf("failed to remove unreferenced file %q: %v", cleanupPath, err)
@@ -202,4 +226,18 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeStoredFile supports R2 addresses and existing local/multipart files.
+func removeStoredFile(ctx context.Context, addr string) error {
+	if key, isR2 := strings.CutPrefix(addr, "r2://"); isR2 {
+		// Cleanup must still run if the client disconnects after the DB commits.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		return storage.R2().DeleteObject(cleanupCtx, key)
+	}
+	if err := os.Remove(addr); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }

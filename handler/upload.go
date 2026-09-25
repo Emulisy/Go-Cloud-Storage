@@ -1,18 +1,21 @@
 package handler
 
 import (
+	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"goCloudStorage/auth"
 	"goCloudStorage/db"
+	"goCloudStorage/storage"
 	"goCloudStorage/util"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"encoding/hex"
-	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -31,11 +34,16 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		http.Error(w, "invalid file upload", http.StatusBadRequest)
 		return
 	}
+	defer r.MultipartForm.RemoveAll()
 	defer file.Close()
 
 	// 2. Construct metadata and calculate hash.
 	storedFile := db.StoredFile{}
-	originalFileName := header.Filename
+	originalFileName := strings.TrimSpace(header.Filename)
+	if originalFileName == "" || len(originalFileName) > 255 {
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
 
 	sha256, err := util.CalculateSHA256(file)
 	if err != nil {
@@ -44,58 +52,44 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	}
 	storedFile.Hash = sha256
 
-	// 4. Reset the file reader.
+	// 3. Reset the file reader.
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		http.Error(w, "failed to read uploaded file", http.StatusInternalServerError)
 		return
 	}
 
-	// 5. Create a temporary file.
-	newFile, err := os.CreateTemp("", "gocloudstorage-*")
-	if err != nil {
+	// 4. Upload under a unique key so cleanup cannot delete another upload.
+	key := "objects/" + storedFile.Hash + "/" + rand.Text()
+	storedFile.Addr = "r2://" + key
+	storedFile.Size = header.Size
+	if err := storage.R2().PutObject(r.Context(), key, file, storedFile.Size, header.Header.Get("Content-Type")); err != nil {
+		log.Printf("failed to upload R2 object %q: %v", key, err)
 		http.Error(w, "failed to store uploaded file", http.StatusInternalServerError)
 		return
 	}
 
-	storedFile.Addr = newFile.Name()
-	uploadSucceeded := false
-
-	defer func() {
-		if !uploadSucceeded {
-			_ = newFile.Close()
-			_ = os.Remove(storedFile.Addr)
-		}
-	}()
-
-	// 6. Copy the uploaded file to local storage.
-	storedFile.Size, err = io.Copy(newFile, file)
-	if err != nil {
-		http.Error(w, "failed to store uploaded file", http.StatusInternalServerError)
-		return
-	}
-
-	if err := newFile.Close(); err != nil {
-		http.Error(w, "failed to store uploaded file", http.StatusInternalServerError)
-		return
-	}
-
-	// 7. Save file metadata to MySQL.
+	// 5. Save file metadata to MySQL.
 	contentCreated, err := db.StoreUserFile(
 		user.UserID,
 		originalFileName,
 		storedFile,
 	)
 	if err != nil {
-		log.Printf("failed to store user file: %v", err)
+		// A commit error can have an unknown outcome. Retain the object rather
+		// than risk deleting content referenced by a committed database row.
+		log.Printf("failed to store user file; retained %q for reconciliation: %v", storedFile.Addr, err)
 		http.Error(w, "failed to save uploaded file", http.StatusInternalServerError)
 		return
 	}
 
-	// A concurrent upload may have created the shared row first.
-	// In that case, the temporary file is redundant and will be removed.
-	uploadSucceeded = contentCreated
+	// The database may have reused content uploaded earlier or concurrently.
+	if !contentCreated {
+		if err := removeStoredFile(r.Context(), storedFile.Addr); err != nil {
+			log.Printf("failed to remove redundant object %q: %v", storedFile.Addr, err)
+		}
+	}
 
-	// 8. Return the upload result.
+	// 6. Return the upload result.
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte("SUCCESS"))
@@ -120,7 +114,7 @@ func TryFastUploadHandler(w http.ResponseWriter, r *http.Request, user auth.User
 	fileSize, err := strconv.ParseInt(r.PostForm.Get("filesize"), 10, 64)
 
 	// 2. Validate file metadata.
-	if fileName == "" {
+	if fileName == "" || len(fileName) > 255 {
 		http.Error(w, "invalid filename", http.StatusBadRequest)
 		return
 	}
@@ -142,9 +136,11 @@ func TryFastUploadHandler(w http.ResponseWriter, r *http.Request, user auth.User
 
 	// 3. Try fast upload.
 	reused, err := tryFastUpload(
+		r.Context(),
 		user.UserID,
 		fileName,
 		fileHash,
+		fileSize,
 	)
 	if err != nil {
 		log.Printf("failed to reuse uploaded file: %v", err)
@@ -172,7 +168,7 @@ func TryFastUploadHandler(w http.ResponseWriter, r *http.Request, user auth.User
 }
 
 // tryFastUpload links existing content to the user without storing it again.
-func tryFastUpload(userID int64, originalFileName string, fileHash string) (bool, error) {
+func tryFastUpload(ctx context.Context, userID int64, originalFileName string, fileHash string, fileSize int64) (bool, error) {
 	storedFile, err := db.GetStoredFile(fileHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -184,12 +180,26 @@ func tryFastUpload(userID int64, originalFileName string, fileHash string) (bool
 	if storedFile.Addr == "" {
 		return false, fmt.Errorf("stored file has no location")
 	}
-	info, err := os.Stat(storedFile.Addr)
-	if err != nil {
-		return false, fmt.Errorf("stat stored file: %w", err)
+	if storedFile.Size != fileSize {
+		return false, fmt.Errorf("requested file size does not match stored metadata")
 	}
-	if !info.Mode().IsRegular() || info.Size() != storedFile.Size {
-		return false, fmt.Errorf("stored file does not match metadata")
+	if key, isR2 := strings.CutPrefix(storedFile.Addr, "r2://"); isR2 {
+		info, err := storage.R2().HeadObject(ctx, key)
+		if err != nil {
+			return false, fmt.Errorf("head stored R2 object: %w", err)
+		}
+		if info.Size != storedFile.Size {
+			return false, fmt.Errorf("stored R2 object does not match metadata")
+		}
+	} else {
+		// Multipart uploads and older files still use local storage.
+		info, err := os.Stat(storedFile.Addr)
+		if err != nil {
+			return false, fmt.Errorf("stat stored file: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Size() != storedFile.Size {
+			return false, fmt.Errorf("stored file does not match metadata")
+		}
 	}
 
 	if err := db.LinkUserFile(userID, originalFileName, fileHash); err != nil {
