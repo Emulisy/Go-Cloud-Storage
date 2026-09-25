@@ -1,152 +1,325 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Your personal space to upload and manage files.">
-  <title>goCloudStorage · Your files, in your orbit</title>
-  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css">
-</head>
-<body class="landing-page">
-  <header class="landing-header">
-    <a class="brand" href="#intro" aria-label="goCloudStorage home">
-      <span class="brand-mark" aria-hidden="true">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </span>
-      <span>goCloudStorage</span>
-    </a>
-    <nav aria-label="Landing page actions">
-      <a class="text-link" href="#manage">Explore features</a>
-      <a class="text-link" href="/file/signin">Sign in</a>
-      <a class="button button-primary" href="/file/signup">Create account</a>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Your personal space to upload and manage files.">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <title>goCloudStorage — your files, in your orbit.</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=3">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      body.rhine-theme {
+        --rhine-ink: #11130f;
+        --rhine-paper: #f4f5f1;
+        --rhine-white: #fff;
+        --rhine-line: rgba(17, 19, 15, .18);
+        --rhine-green: #9ac43c;
+        background: var(--rhine-paper);
+        color: var(--rhine-ink);
+      }
+      body.rhine-theme::before {
+        background:
+          linear-gradient(90deg, transparent 49.9%, rgba(17,19,15,.045) 50%, transparent 50.1%),
+          linear-gradient(rgba(17,19,15,.025) 1px, transparent 1px);
+        background-size: 50vw 100%, 100% 36px;
+        mix-blend-mode: normal;
+      }
+      .rhine-theme .story-progress { right: 28px; gap: 12px; }
+      .rhine-theme .story-progress a {
+        width: 11px; height: 11px; border: 1px solid var(--rhine-ink);
+        background: var(--rhine-white); box-shadow: none; transform: rotate(45deg);
+      }
+      .rhine-theme .story-progress a.is-active,
+      .rhine-theme .story-progress a[aria-current="true"] { background: var(--rhine-green); }
+      .rhine-theme .story-progress a::after {
+        border: 0; border-left: 4px solid var(--rhine-green); box-shadow: none;
+        background: var(--rhine-ink); color: var(--rhine-white); transform: translateY(-50%) rotate(-45deg);
+      }
+      .rhine-theme .story-panel {
+        min-height: 100vh; padding: 76px 6vw; border-bottom: 1px solid var(--rhine-ink);
+        background: rgba(255,255,255,.72); overflow: hidden;
+      }
+      .rhine-theme .story-panel::before {
+        inset: 28px; border: 1px solid var(--rhine-line);
+        background: linear-gradient(135deg, rgba(154,196,60,.08), transparent 42%);
+      }
+      .rhine-theme .story-panel::after {
+        content: "+"; position: absolute; right: 7%; top: 9%; color: var(--rhine-ink);
+        font: 300 56px/1 "IBM Plex Mono", monospace;
+      }
+      .rhine-theme .story-panel.is-dark {
+        background: var(--rhine-ink); color: var(--rhine-white);
+      }
+      .rhine-theme .story-panel.is-dark::before { border-color: rgba(255,255,255,.2); }
+      .rhine-theme .story-panel.is-dark::after { color: var(--rhine-green); }
+      .rhine-theme .story-inner {
+        width: min(1160px, 100%); margin: 0 auto; gap: clamp(42px, 7vw, 104px);
+        position: relative; z-index: 2;
+      }
+      .rhine-theme .story-eyebrow {
+        display: inline-block; padding: 6px 12px; margin-bottom: 22px;
+        background: var(--rhine-ink); color: var(--rhine-white); border: 0;
+        font-size: 11px; letter-spacing: .22em; transform: skewX(-7deg);
+      }
+      .rhine-theme .story-panel.is-dark .story-eyebrow { background: var(--rhine-green); color: var(--rhine-ink); }
+      .rhine-theme .story-copy h1,
+      .rhine-theme .story-copy h2 {
+        max-width: 720px; color: var(--rhine-ink); font-weight: 800;
+        letter-spacing: -.035em; text-transform: uppercase;
+      }
+      .rhine-theme .story-copy h1 { font-size: clamp(46px, 6vw, 86px); }
+      .rhine-theme .story-copy h2 { font-size: clamp(38px, 4.5vw, 66px); }
+      .rhine-theme .story-copy p { max-width: 650px; color: #41443d; font-size: 15px; line-height: 1.8; }
+      .rhine-theme .story-panel.is-dark h1,
+      .rhine-theme .story-panel.is-dark h2,
+      .rhine-theme .story-panel.is-dark .story-copy p { color: var(--rhine-white); }
+      .rhine-theme .chip-row { gap: 8px; margin-top: 24px; }
+      .rhine-theme .chip {
+        border: 1px solid currentColor; background: transparent; box-shadow: none;
+        padding: 6px 10px; font-size: 10px; letter-spacing: .14em;
+      }
+      .rhine-theme .story-panel.is-dark .chip { color: var(--rhine-white); border-color: rgba(255,255,255,.5); }
+      .rhine-theme .story-cta { margin-top: 30px; }
+      .rhine-theme .button { border: 1px solid var(--rhine-ink); border-radius: 0; box-shadow: 4px 4px 0 var(--rhine-ink); }
+      .rhine-theme .button-primary { background: var(--rhine-green); color: var(--rhine-ink); }
+      .rhine-theme .button-secondary { background: var(--rhine-white); color: var(--rhine-ink); }
+      .rhine-theme .panel-visual {
+        background: rgba(255,255,255,.94); border: 1px solid var(--rhine-ink);
+        box-shadow: 12px 12px 0 rgba(17,19,15,.14), inset 0 -10px 0 var(--rhine-green);
+        transform: rotate(-1.5deg); padding: clamp(24px, 4vw, 48px);
+      }
+      .rhine-theme .story-panel.is-dark .panel-visual {
+        background: #f7f8f4; color: var(--rhine-ink); border-color: var(--rhine-white);
+        box-shadow: 12px 12px 0 rgba(154,196,60,.45), inset 0 -10px 0 var(--rhine-green);
+      }
+      .rhine-theme .panel-visual::before { border-color: var(--rhine-line); }
+      .rhine-theme .login-line-bar,
+      .rhine-theme .meter-bar { border: 1px solid var(--rhine-ink); background: #e8eae4; }
+      .rhine-theme .login-line-bar span,
+      .rhine-theme .meter-fill { background: var(--rhine-green); }
+      .rhine-theme .manage-row,
+      .rhine-theme .settings-row,
+      .rhine-theme .hash-row { border-color: var(--rhine-ink); }
+      @media (max-width: 960px) {
+        .rhine-theme .story-panel { padding: 70px 24px; }
+        .rhine-theme .story-inner { grid-template-columns: 1fr; }
+        .rhine-theme .panel-visual { transform: none; }
+        .rhine-theme .story-progress { right: 12px; }
+      }
+    </style>
+  </head>
+  <body class="landing-wrap rhine-theme">
+    <nav class="story-progress" aria-label="Story navigation">
+      <a href="#intro" data-panel-link data-label="01 — Intro" class="is-active"></a>
+      <a href="#secure" data-panel-link data-label="02 — Private"></a>
+      <a href="#upload" data-panel-link data-label="03 — Upload"></a>
+      <a href="#integrity" data-panel-link data-label="04 — Verify"></a>
+      <a href="#manage" data-panel-link data-label="05 — Manage"></a>
+      <a href="#account" data-panel-link data-label="06 — Account"></a>
     </nav>
-  </header>
 
-  <main class="story-rail" data-story-rail aria-label="goCloudStorage feature story">
-    <section class="story-panel" id="intro" data-story-panel aria-labelledby="intro-title">
-      <div class="panel-inner">
-        <div class="panel-copy">
-          <p class="panel-kicker">Private by design</p>
-          <h1 id="intro-title">Your files, in your orbit.</h1>
-          <p class="lead">A clean place to upload, protect, and manage the files that matter—without the clutter.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="/file/signup">
-              Start storing
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </a>
-            <a class="button button-secondary" href="/file/home">Open your files</a>
+    <main class="story-rail" data-story-rail aria-label="goCloudStorage feature story">
+      <section class="story-panel" id="intro" data-story-panel aria-labelledby="intro-title">
+        <div class="story-inner">
+          <div class="story-copy">
+            <span class="story-eyebrow">Module 01 · SYSTEM INTRO</span>
+            <h1 id="intro-title">Your files, in your orbit.</h1>
+            <p>goCloudStorage is a compact, self-hosted place for the documents, archives, and media you use every day. Upload, rename, download, and delete files from one clear workspace.</p>
+            <div class="chip-row">
+              <span class="chip">Go runtime</span>
+              <span class="chip">MySQL backed</span>
+              <span class="chip">SHA-256 identity</span>
+              <span class="chip">Resumable uploads</span>
+            </div>
+            <div class="story-cta">
+              <a href="/file/signup" class="button button-primary">Create account</a>
+              <a href="/file/signin" class="button button-secondary">Sign in</a>
+            </div>
+          </div>
+          <div class="panel-visual login-visual" aria-hidden="true">
+            <div class="login-strip">
+              <div class="login-line">
+                <span class="login-line-label">USERNAME</span>
+                <div class="login-line-bar text-bar-60"><span></span></div>
+              </div>
+              <div class="login-line">
+                <span class="login-line-label">PASSWORD</span>
+                <div class="login-line-bar text-bar-90"><span></span></div>
+              </div>
+              <div class="login-line">
+                <span class="login-line-label">SESSION</span>
+                <div class="login-line-bar text-bar-60"><span></span></div>
+              </div>
+              <div class="login-cta-row">
+                <span class="chip">SIGN IN</span>
+                <span class="chip">PRIVATE ACCESS</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="panel-visual" aria-hidden="true">
-          <div class="orbit"></div>
-          <div class="visual-card hero-drive-card">
-            <div class="visual-card-bar"><span class="mini-dots"><i></i><i></i><i></i></span></div>
-            <div class="mini-file-row"><span class="mini-file-icon">D</span><span class="mini-lines"><b></b><span></span></span><span class="mini-tag"></span></div>
-            <div class="mini-file-row"><span class="mini-file-icon">P</span><span class="mini-lines"><b></b><span></span></span><span class="mini-tag"></span></div>
-            <div class="mini-file-row"><span class="mini-file-icon">V</span><span class="mini-lines"><b></b><span></span></span><span class="mini-tag"></span></div>
+      </section>
+
+      <section class="story-panel is-dark" id="secure" data-story-panel aria-labelledby="secure-title">
+        <div class="story-inner">
+          <div class="panel-visual lock-visual" aria-hidden="true">
+            <div class="lock-console">
+              <div class="lock-readout">
+                ID_01: <span class="dim">AUTH_REQ</span><br>
+                ID_02: <span class="dim">TOKEN_GEN</span><br>
+                ID_03: <span class="dim">SESSION_BIND</span><br>
+                SESSION: <b>HTTPONLY COOKIE</b>
+              </div>
+              <div class="lock-leds">
+                <span class="lock-led on"></span>
+                <span class="lock-led on"></span>
+                <span class="lock-led on"></span>
+                <span class="lock-led"></span>
+                <span class="lock-led"></span>
+              </div>
+              <div class="lock-slider">
+                <div class="lock-slider-track">
+                  <div class="lock-slider-thumb"></div>
+                </div>
+                <span class="lock-switch">SECURE</span>
+              </div>
+            </div>
           </div>
-          <div class="visual-card floating-stat"><span class="stat-ring"></span><div><strong>Your files</strong><span>In one place</span></div></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="story-panel is-dark" id="secure" data-story-panel aria-labelledby="secure-title">
-      <div class="panel-inner">
-        <div class="panel-copy">
-          <span class="panel-index">01 / 05</span>
-          <p class="panel-kicker">Account security</p>
-          <h2 id="secure-title">Only you hold the key.</h2>
-          <p class="lead">Protected sessions, hashed passwords, and ownership checks keep every file attached to the right account.</p>
-          <div class="hero-actions"><a class="button button-yellow" href="/file/signin">Sign in securely</a></div>
-        </div>
-        <div class="panel-visual" aria-hidden="true">
-          <div class="orbit"></div>
-          <div class="visual-card security-card">
-            <div class="security-shield"><svg width="35" height="35" viewBox="0 0 24 24" fill="none"><path d="M12 3 5.5 5.6v5.8c0 4.3 2.7 7.8 6.5 9.6 3.8-1.8 6.5-5.3 6.5-9.6V5.6L12 3Z" stroke="currentColor" stroke-width="1.8"/><path d="m9.3 12 1.8 1.8 3.8-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <h3>Account protected</h3><p>Your private space is ready.</p>
-            <div class="security-list"><div class="security-line"><span class="check-dot">✓</span>Secure password storage</div><div class="security-line"><span class="check-dot">✓</span>Authenticated file access</div><div class="security-line"><span class="check-dot">✓</span>24-hour protected sessions</div></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="story-panel" id="upload" data-story-panel aria-labelledby="upload-title">
-      <div class="panel-inner">
-        <div class="panel-copy">
-          <span class="panel-index">02 / 05</span>
-          <p class="panel-kicker">Built for big files</p>
-          <h2 id="upload-title">Upload without the wait anxiety.</h2>
-          <p class="lead">Small files move in one step. Larger files are divided into resilient 5 MiB parts, verified, then rebuilt safely.</p>
-          <div class="hero-actions"><a class="button button-primary" href="/file/upload">See upload space</a></div>
-        </div>
-        <div class="panel-visual upload-visual" aria-hidden="true">
-          <div class="upload-ring"><div class="upload-core"><strong>Step by step</strong><span>Large-file uploads</span></div></div>
-          <span class="chunk chunk-one"></span><span class="chunk chunk-two"></span><span class="chunk chunk-three"></span>
-        </div>
-      </div>
-    </section>
-
-    <section class="story-panel is-dark" id="integrity" data-story-panel aria-labelledby="integrity-title">
-      <div class="panel-inner">
-        <div class="panel-copy">
-          <span class="panel-index">03 / 05</span>
-          <p class="panel-kicker">Smart storage</p>
-          <h2 id="integrity-title">One file. One trusted fingerprint.</h2>
-          <p class="lead">SHA-256 verification checks integrity while content-aware storage avoids keeping duplicate physical files.</p>
-        </div>
-        <div class="panel-visual hash-visual" aria-hidden="true">
-          <div class="hash-stack">
-            <div class="hash-layer"><span class="hash-code">#1</span><span class="hash-text"><strong>File fingerprint</strong><span>Calculated from your content</span></span></div>
-            <div class="hash-layer"><span class="hash-code">✓</span><span class="hash-text"><strong>Content verified</strong><span>SHA-256 matched</span></span></div>
-            <div class="hash-layer"><span class="hash-code">1×</span><span class="hash-text"><strong>Stored once</strong><span>duplicate avoided</span></span></div>
+          <div class="story-copy">
+            <span class="story-eyebrow">Module 02 · CHAMBER</span>
+            <h2 id="secure-title">Only you hold the key.</h2>
+            <p>Sign in with a long-form bcrypt password. Sessions are stamped into a short-lived token on the server and returned as an HttpOnly cookie, so your browser never exposes the token to local scripts.</p>
+            <div class="chip-row">
+              <span class="chip">bcrypt cost 10</span>
+              <span class="chip">HS-256 JWT</span>
+              <span class="chip">24 hour window</span>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="story-panel" id="manage" data-story-panel aria-labelledby="manage-title">
-      <div class="panel-inner">
-        <div class="panel-copy">
-          <span class="panel-index">04 / 05</span>
-          <p class="panel-kicker">File control</p>
-          <h2 id="manage-title">Everything important, nothing in the way.</h2>
-          <p class="lead">Review metadata, rename clearly, download instantly, and remove files from one focused workspace.</p>
-          <div class="hero-actions"><a class="button button-primary" href="/file/upload">Upload a file</a></div>
+      <section class="story-panel" id="upload" data-story-panel aria-labelledby="upload-title">
+        <div class="story-inner">
+          <div class="story-copy">
+            <span class="story-eyebrow">Module 03 · TRANSFER BAY</span>
+            <h2 id="upload-title">Upload without the wait anxiety.</h2>
+            <p>Small files upload in one request with content-length integrity checks. Files above 100 MiB are hashed client-side, split into 5 MiB parts, and uploaded one chunk at a time. Resume from the last completed part if the connection stalls or you close the tab.</p>
+            <div class="chip-row">
+              <span class="chip">100 MiB threshold</span>
+              <span class="chip">5 MiB chunks</span>
+              <span class="chip">Tab-safe resume</span>
+            </div>
+          </div>
+          <div class="panel-visual upload-visual" aria-hidden="true">
+            <div class="upload-meters">
+              <div class="meter">
+                <span class="meter-label">HASH FILE</span>
+                <div class="meter-bar"><div class="meter-fill high"></div></div>
+                <span class="meter-value">SHA-256</span>
+              </div>
+              <div class="meter">
+                <span class="meter-label">CHECK EXISTING</span>
+                <div class="meter-bar"><div class="meter-fill med"></div></div>
+                <span class="meter-value">FAST</span>
+              </div>
+              <div class="meter">
+                <span class="meter-label">UPLOAD PARTS</span>
+                <div class="meter-bar"><div class="meter-fill low"></div></div>
+                <span class="meter-value">RESUME</span>
+              </div>
+            </div>
+            <div class="meter-led-row">
+              <span class="meter-led r">SELECT FILE</span>
+              <span class="meter-led y">VERIFY</span>
+              <span class="meter-led g">UPLOAD</span>
+              <span class="meter-led g">SAVE</span>
+            </div>
+          </div>
         </div>
-        <div class="panel-visual manage-visual" aria-hidden="true">
-          <div class="manage-row"><span class="manage-icon">↓</span><span class="manage-name"><strong>Download your files</strong><span>Save a copy to your device</span></span></div>
-          <div class="manage-row"><span class="manage-icon">Aa</span><span class="manage-name"><strong>Rename your files</strong><span>Keep names clear and useful</span></span></div>
-          <div class="manage-row"><span class="manage-icon">×</span><span class="manage-name"><strong>Remove unwanted files</strong><span>Confirm each deletion</span></span></div>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="story-panel is-dark" id="account" data-story-panel aria-labelledby="account-title">
-      <div class="panel-inner">
-        <div class="panel-copy">
-          <span class="panel-index">05 / 05</span>
-          <p class="panel-kicker">Your account</p>
-          <h2 id="account-title">A calmer place for your digital work.</h2>
-          <p class="lead">Keep profile and security details close, then get back to the files that move your work forward.</p>
-          <div class="hero-actions"><a class="button button-yellow" href="/file/signup">Create your space</a><a class="button button-secondary" href="/file/account">Your account</a></div>
+      <section class="story-panel is-dark" id="integrity" data-story-panel aria-labelledby="integrity-title">
+        <div class="story-inner">
+          <div class="panel-visual fingerprint-visual" aria-hidden="true">
+            <div class="hash-readout">
+              SHA-256/<span class="dim">256b</span>_<br>
+              e3b0c442_98fc1c14_9afbf4c8_996fb924<br>
+              27ae41e4_649b934c_a495991b_7852b855
+            </div>
+            <div class="hash-row"><span>FINGERPRINT</span>SHA-256</div>
+            <div class="hash-row"><span>STORAGE</span>DEDUPLICATED</div>
+            <div class="hash-row"><span>UPLOAD</span><span class="hash-check">VERIFIED</span></div>
+          </div>
+          <div class="story-copy">
+            <span class="story-eyebrow">Module 04 · INTEGRITY</span>
+            <h2 id="integrity-title">One file. One trusted fingerprint.</h2>
+            <p>Every upload is identified by its SHA-256 hash. Matching uploads share the same underlying file record, so the server only stores a single copy of the bytes per fingerprint.</p>
+            <div class="chip-row">
+              <span class="chip">SHA-256 identity</span>
+              <span class="chip">Deduplicated storage</span>
+              <span class="chip">Stored fingerprint</span>
+            </div>
+          </div>
         </div>
-        <div class="panel-visual account-visual" aria-hidden="true">
-          <div class="visual-card account-card-demo"><div class="avatar-demo">✓</div><h3>Your account</h3><p>Personal cloud workspace</p><div class="profile-fields"><span class="profile-field"></span><span class="profile-field"></span><span class="profile-field"></span></div></div>
-        </div>
-      </div>
-    </section>
-  </main>
+      </section>
 
-  <nav class="story-progress" aria-label="Feature panels">
-    <a href="#intro" data-panel-link aria-label="Introduction" aria-current="true"></a>
-    <a href="#secure" data-panel-link aria-label="Security"></a>
-    <a href="#upload" data-panel-link aria-label="Uploads"></a>
-    <a href="#integrity" data-panel-link aria-label="Integrity"></a>
-    <a href="#manage" data-panel-link aria-label="File management"></a>
-    <a href="#account" data-panel-link aria-label="Account"></a>
-  </nav>
-  <div class="scroll-hint" aria-hidden="true"><span>Scroll sideways to explore</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-  <script src="/assets/landing.js"></script>
-</body>
+      <section class="story-panel" id="manage" data-story-panel aria-labelledby="manage-title">
+        <div class="story-inner">
+          <div class="story-copy">
+            <span class="story-eyebrow">Module 05 · CONTROL DECK</span>
+            <h2 id="manage-title">Everything important, nothing in the way.</h2>
+            <p>From the file manager you can download, rename, or delete each file on a single row. Pagination keeps the list manageable, and inline status messages explain what is happening.</p>
+            <div class="chip-row">
+              <span class="chip">Page-sized lists</span>
+              <span class="chip">Rename in dialog</span>
+              <span class="chip">Confirm on delete</span>
+            </div>
+          </div>
+          <div class="panel-visual manage-visual" aria-hidden="true">
+            <div class="manage-row"><span class="manage-icon">FILE</span><span class="manage-name"><strong>Your file</strong><span>Name · size · date</span></span><span class="manage-action">Download</span></div>
+            <div class="manage-row"><span class="manage-icon">FILE</span><span class="manage-name"><strong>Your file</strong><span>Name · size · date</span></span><span class="manage-action">Rename</span></div>
+            <div class="manage-row"><span class="manage-icon">FILE</span><span class="manage-name"><strong>Your file</strong><span>Name · size · date</span></span><span class="manage-action">Delete</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="story-panel is-dark" id="account" data-story-panel aria-labelledby="account-title">
+        <div class="story-inner">
+          <div class="panel-visual settings-visual" aria-hidden="true">
+            <div class="settings-strip">
+              <div class="settings-row">
+                <div class="settings-meta"><strong>DISPLAY NAME</strong><small>Edit your profile name</small></div>
+                <div class="toggle-switch"></div>
+              </div>
+              <div class="settings-row">
+                <div class="settings-meta"><strong>EMAIL ADDRESS</strong><small>Update your sign-in email</small></div>
+                <div class="toggle-switch"></div>
+              </div>
+              <div class="settings-row">
+                <div class="settings-meta"><strong>PASSWORD</strong><small>Current password required</small></div>
+                <div class="toggle-switch off"></div>
+              </div>
+              <div class="settings-row">
+                <div class="settings-meta"><strong>ACCOUNT ACCESS</strong><small>Authenticated session</small></div>
+                <div class="toggle-switch"></div>
+              </div>
+            </div>
+          </div>
+          <div class="story-copy">
+            <span class="story-eyebrow">Module 06 · IDENTITY</span>
+            <h2 id="account-title">A calmer place for your digital work.</h2>
+            <p>Change your display name, email, and password from one central profile card. Password changes require your current password, and each update shows a status message and refreshes your profile on the current page.</p>
+            <div class="story-cta">
+              <a href="/file/signup" class="button button-primary">Create account</a>
+              <a href="/file/signin" class="button button-secondary">Sign in</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/assets/landing.js?v=2"></script>
+  </body>
 </html>

@@ -1,153 +1,205 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Update your goCloudStorage username, email, and password.">
-  <title>Account · goCloudStorage</title>
-  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css">
-  <script src="/assets/app.js" defer></script>
-</head>
-<body class="app-page" data-page="account">
-  <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="/" aria-label="goCloudStorage home">
-        <span class="brand-mark" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7.2 17.4h9.9a4.1 4.1 0 0 0 .3-8.2A5.8 5.8 0 0 0 6.6 7.6a4.9 4.9 0 0 0 .6 9.8Z" stroke="currentColor" stroke-width="2"/></svg>
-        </span>
-        <span>goCloudStorage</span>
-      </a>
-      <nav class="sidebar-nav" aria-label="Workspace">
-        <a href="/file/home">My files</a>
-        <a href="/file/upload">Upload</a>
-        <a href="/file/account" aria-current="page">Account</a>
-      </nav>
-      <div class="sidebar-foot">
-        <p class="sidebar-caption">Change the name, email, and password used with this account.</p>
-        <form class="signout-form" action="/api/sessions/signout" method="post">
-          <button class="button button-secondary button-full" type="submit">Sign out</button>
-        </form>
-      </div>
-    </aside>
-
-    <main class="app-main">
-      <header class="topbar">
-        <div class="page-title">
-          <h1>Account</h1>
-          <p>Personal workspace</p>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Update your goCloudStorage username, email, and password.">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <title>Account — goCloudStorage</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=3">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      body.rhine-theme { --r-ink:#11130f; --r-paper:#f4f5f1; --r-white:#fff; --r-green:#9ac43c; --r-line:rgba(17,19,15,.2); background:var(--r-paper); color:var(--r-ink); }
+      body.rhine-theme::before { background:linear-gradient(rgba(17,19,15,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(17,19,15,.025) 1px,transparent 1px); background-size:100% 36px,36px 100%; mix-blend-mode:normal; }
+      .rhine-theme .app-shell { grid-template-columns:260px minmax(0,1fr); min-height:100vh; }
+      .rhine-theme .sidebar { background:rgba(255,255,255,.9); border-right:1px solid var(--r-ink); box-shadow:none; }
+      .rhine-theme .sidebar::before { inset:16px; border:1px solid var(--r-line); background:none; }
+      .rhine-theme .sidebar-head { border-bottom:1px solid var(--r-ink); }
+      .rhine-theme .brand-mark { background:var(--r-ink); color:var(--r-white); border:0; box-shadow:3px 3px 0 var(--r-green); }
+      .rhine-theme .brand-title { color:var(--r-ink); font-size:22px; letter-spacing:-.03em; }
+      .rhine-theme .brand-sub { color:#62675d; letter-spacing:.1em; }
+      .rhine-theme .sidebar-user { background:var(--r-ink); border:0; color:var(--r-white); }
+      .rhine-theme .sidebar-user strong { color:var(--r-white); }
+      .rhine-theme .user-avatar { background:var(--r-green); color:var(--r-ink); border:0; }
+      .rhine-theme .sidebar-nav { border-top:1px solid var(--r-line); border-bottom:1px solid var(--r-line); }
+      .rhine-theme .sidebar-nav a { border:0; border-left:5px solid transparent; color:var(--r-ink); background:transparent; letter-spacing:.08em; }
+      .rhine-theme .sidebar-nav a:hover { background:rgba(154,196,60,.14); }
+      .rhine-theme .sidebar-nav a.is-active { background:var(--r-ink); color:var(--r-white); border-left-color:var(--r-green); }
+      .rhine-theme .sidebar-foot { border-top:0; }
+      .rhine-theme .app-main { background:linear-gradient(135deg,rgba(154,196,60,.08),transparent 35%); }
+      .rhine-theme .topbar { min-height:82px; background:rgba(255,255,255,.8); border-bottom:1px solid var(--r-ink); box-shadow:none; padding:18px 28px; }
+      .rhine-theme .topbar-title { display:inline-block; background:var(--r-ink); color:var(--r-white); padding:8px 16px; letter-spacing:.14em; transform:skewX(-6deg); }
+      .rhine-theme .led-indicator { background:var(--r-green); color:var(--r-ink); border:1px solid var(--r-ink); padding:6px 10px; }
+      .rhine-theme .led-indicator::before { display:none; }
+      .rhine-theme .content { padding:clamp(22px,4vw,54px); }
+      .rhine-theme .card,.rhine-theme .surface { background:rgba(255,255,255,.95); border:1px solid var(--r-ink); border-radius:0; box-shadow:10px 10px 0 rgba(17,19,15,.11); }
+      .rhine-theme .card::before { height:8px; background:var(--r-green); }
+      .rhine-theme .card-head { background:var(--r-ink); color:var(--r-white); border-bottom:0; }
+      .rhine-theme .card-head h2,.rhine-theme .card-head h3 { color:var(--r-white); }
+      .rhine-theme .chip { border:1px solid var(--r-white); background:transparent; color:var(--r-white); box-shadow:none; }
+      .rhine-theme .upload-card { background:rgba(255,255,255,.96); }
+      .rhine-theme .upload-card .card-head { padding:12px 14px; margin:-18px -18px 18px; }
+      .rhine-theme .upload-zone { background:linear-gradient(135deg,rgba(154,196,60,.13),rgba(255,255,255,.8)); border:1px dashed var(--r-ink); }
+      .rhine-theme .file-picker + label { background:var(--r-ink); color:var(--r-white); border:1px solid var(--r-ink); box-shadow:4px 4px 0 var(--r-green); }
+      .rhine-theme .button { border:1px solid var(--r-ink); border-radius:0; box-shadow:3px 3px 0 var(--r-ink); }
+      .rhine-theme .button-primary { background:var(--r-green); color:var(--r-ink); }
+      .rhine-theme .button-secondary { background:var(--r-white); color:var(--r-ink); }
+      .rhine-theme .files-table thead { background:var(--r-ink); }
+      .rhine-theme .files-table tbody td { border-color:var(--r-line); }
+      .rhine-theme .file-type { background:var(--r-green); border:1px solid var(--r-ink); }
+      .rhine-theme .row-action { border:1px solid var(--r-ink); box-shadow:2px 2px 0 var(--r-ink); background:var(--r-white); }
+      .rhine-theme .row-action.danger { background:#f0d9d2; color:#6d261c; }
+      .rhine-theme .pager { border-top:1px solid var(--r-ink); background:#f0f2ec; }
+      .rhine-theme input { border:1px solid var(--r-ink); border-radius:0; background:var(--r-white); box-shadow:none; }
+      .rhine-theme input:focus { outline:3px solid rgba(154,196,60,.42); border-color:var(--r-ink); }
+      .rhine-theme fieldset { border:1px solid var(--r-line); }
+      .rhine-theme legend { background:var(--r-ink); color:var(--r-white); padding:5px 9px; }
+      .rhine-theme .profile-avatar { background:var(--r-green); color:var(--r-ink); border:1px solid var(--r-ink); }
+      .rhine-theme dialog { border:1px solid var(--r-ink); border-radius:0; box-shadow:14px 14px 0 rgba(17,19,15,.2); }
+      .rhine-theme dialog::backdrop { background:rgba(17,19,15,.62); }
+      .rhine-theme progress { border:1px solid var(--r-ink); }
+      .rhine-theme progress::-webkit-progress-value { background:var(--r-green); }
+      @media(max-width:960px){ .rhine-theme .app-shell{grid-template-columns:1fr}.rhine-theme .sidebar{border-right:0;border-bottom:1px solid var(--r-ink)}.rhine-theme .content{padding:20px}.rhine-theme .topbar{padding:14px 18px}.rhine-theme .content-grid{grid-template-columns:1fr} }
+    </style>
+  </head>
+  <body class="app-page rhine-theme" data-page="account">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Application">
+        <div class="sidebar-head">
+          <a class="brand-block" href="/file/home" aria-label="Go to main page">
+            <span class="brand-mark">gC</span>
+            <div>
+              <div class="brand-title">GoCloud<br>Storage</div>
+              <div class="brand-sub">Personal cloud storage</div>
+            </div>
+          </a>
         </div>
-        <a class="user-chip" href="/file/account">
-          <span class="user-avatar" data-avatar aria-hidden="true"></span>
-          <span class="user-meta">
-            <strong data-username>Account</strong>
-            <span>Profile &amp; security</span>
-          </span>
-        </a>
-      </header>
 
-      <div class="content">
-        <p id="page-status" class="status" role="status" aria-live="polite"></p>
-        <div class="welcome-row">
-          <div>
-            <p class="eyebrow">Account controls</p>
-            <h2>Your profile, your rules.</h2>
-            <p>Keep your display name, sign-in email, and password current.</p>
+        <div class="sidebar-user" aria-label="Current user">
+          <span class="user-avatar" data-avatar aria-hidden="true"></span>
+          <div class="user-meta">
+            <strong data-username>Account</strong>
+            <small>Signed in</small>
           </div>
         </div>
 
-        <div class="account-layout">
-          <section class="surface account-card">
-            <div class="surface-header">
-              <div>
-                <h2>Profile details</h2>
-                <span>Your name and sign-in email</span>
-              </div>
+        <ul class="sidebar-nav" aria-label="Primary">
+          <li><a href="/file/home">My files</a></li>
+          <li><a href="/file/upload">Upload file</a></li>
+          <li><a class="is-active" href="/file/account">Account</a></li>
+        </ul>
+
+        <div class="sidebar-foot">
+          <p class="sidebar-caption">Change the name, email, and password used with this account.</p>
+          <form class="signout-form" action="/api/sessions/signout" method="post">
+            <button class="button button-secondary button-full" type="submit">Log out</button>
+          </form>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <header class="topbar">
+          <div class="topbar-title">ACCOUNT · PROFILE AND SECURITY</div>
+          <div class="topbar-right">
+            <span class="led-indicator">Signed in</span>
+            <span id="page-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+        </header>
+
+        <section class="content content-wide">
+          <div class="card profile-card panel-stack" aria-label="Profile">
+            <div class="card-head">
+              <h2>Account profile</h2>
+              <span class="chip">Profile settings</span>
             </div>
-            <div class="account-card-body">
-              <div class="profile-heading">
+            <div class="card-body">
+              <div class="profile-header">
                 <span class="profile-avatar" data-avatar aria-hidden="true"></span>
-                <div>
+                <div class="profile-info">
                   <h2 data-username></h2>
-                  <p id="account-email"></p>
                 </div>
               </div>
 
-              <form class="form-stack account-form" data-update="name" id="name-form">
-                <fieldset disabled>
-                  <div class="field">
-                    <label for="profile-name">Display name</label>
-                    <input id="profile-name" name="userName" minlength="3" maxlength="64" autocomplete="nickname" required>
-                    <p class="field-hint">Use 3–64 bytes.</p>
-                  </div>
-                  <button class="button button-primary" type="submit">Save name</button>
-                </fieldset>
-                <p class="status" role="status" aria-live="polite"></p>
-              </form>
-
-              <form class="form-stack account-form" data-update="email" id="email-form">
-                <fieldset disabled>
-                  <div class="field">
-                    <label for="profile-email">Email address</label>
-                    <input id="profile-email" name="email" type="email" maxlength="254" autocomplete="email" required>
-                    <p class="field-hint">Use this address the next time you sign in.</p>
-                  </div>
-                  <button class="button button-primary" type="submit">Save email</button>
-                </fieldset>
-                <p class="status" role="status" aria-live="polite"></p>
-              </form>
-            </div>
-          </section>
-
-          <div class="account-side">
-            <section class="surface account-card">
-              <div class="surface-header">
-                <div>
-                  <h2>Account activity</h2>
-                  <span>Dates from your profile</span>
-                </div>
-              </div>
-              <div class="account-card-body">
-                <div class="account-facts">
-                  <div class="fact-row"><span>Signed up</span><strong id="account-signup">—</strong></div>
-                  <div class="fact-row"><span>Last active</span><strong id="account-active">—</strong></div>
-                </div>
-              </div>
-            </section>
-
-            <section class="surface account-card">
-              <div class="surface-header">
-                <div>
-                  <h2>Change password</h2>
-                  <span>Choose a password only you know</span>
-                </div>
-              </div>
-              <div class="account-card-body">
-                <form class="form-stack account-form" data-update="password" id="password-form">
-                  <fieldset disabled>
+              <div class="account-panel" style="margin-top: 20px;">
+                <form class="form-stack account-form" data-update="name" id="name-form">
+                  <fieldset>
+                    <legend>Display name</legend>
                     <div class="field">
-                      <label for="current-password">Current password</label>
-                      <input id="current-password" type="password" name="currentPwd" autocomplete="current-password" minlength="5" maxlength="72" required>
+                      <label for="profile-name">Username</label>
+                      <input id="profile-name" name="userName" minlength="3" maxlength="64" autocomplete="nickname" required>
                     </div>
-                    <div class="field">
-                      <label for="new-password">New password</label>
-                      <input id="new-password" type="password" name="newPwd" autocomplete="new-password" minlength="5" maxlength="72" required>
-                      <p class="field-hint">Use 5–72 bytes. A longer passphrase is easier to remember.</p>
+                    <div style="margin-top: 12px;">
+                      <button class="button button-primary" type="submit">Save name</button>
                     </div>
-                    <div class="field">
-                      <label for="confirm-password">Confirm new password</label>
-                      <input id="confirm-password" type="password" name="confirmPassword" autocomplete="new-password" required>
-                    </div>
-                    <button class="button button-primary" type="submit">Update password</button>
+                    <p class="status" role="status" style="margin-top: 10px;"></p>
                   </fieldset>
-                  <p class="status" role="status" aria-live="polite"></p>
+                </form>
+
+                <form class="form-stack account-form" data-update="email" id="email-form">
+                  <fieldset>
+                    <legend>Contact email</legend>
+                    <div class="field">
+                      <label for="profile-email">Email address</label>
+                      <input id="profile-email" name="email" type="email" maxlength="254" autocomplete="email" required>
+                    </div>
+                    <div style="margin-top: 12px;">
+                      <button class="button button-primary" type="submit">Save email</button>
+                    </div>
+                    <p class="status" role="status" style="margin-top: 10px;"></p>
+                  </fieldset>
                 </form>
               </div>
-            </section>
+
+              <div class="card" style="margin-top: 20px;">
+                <div class="card-head">
+                  <h3>Account details</h3>
+                </div>
+                <div class="card-body">
+                  <div class="facts-grid">
+                    <div class="fact-row"><span>Contact email</span><strong id="account-email"></strong></div>
+                    <div class="fact-row"><span>Account status</span><strong>Active</strong></div>
+                    <div class="fact-row"><span>Signed up</span><strong id="account-signup">—</strong></div>
+                    <div class="fact-row"><span>Last active</span><strong id="account-active">—</strong></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card" style="margin-top: 20px;">
+                <div class="card-head">
+                  <h3>Security</h3>
+                </div>
+                <div class="card-body">
+                  <form class="form-stack account-form" data-update="password" id="password-form">
+                    <fieldset>
+                      <legend>Change password</legend>
+                      <div class="field">
+                        <label for="current-password">Current password</label>
+                        <input id="current-password" type="password" name="currentPwd" autocomplete="current-password" minlength="5" maxlength="72" required>
+                      </div>
+                      <div class="field" style="margin-top: 10px;">
+                        <label for="new-password">New password</label>
+                        <input id="new-password" type="password" name="newPwd" autocomplete="new-password" minlength="5" maxlength="72" required>
+                      </div>
+                      <div class="field" style="margin-top: 10px;">
+                        <label for="confirm-password">Confirm new password</label>
+                        <input id="confirm-password" type="password" name="confirmPassword" autocomplete="new-password" required>
+                      </div>
+                      <div style="margin-top: 12px;">
+                        <button class="button button-primary" type="submit">Update password</button>
+                      </div>
+                      <p class="status" role="status" style="margin-top: 10px;"></p>
+                    </fieldset>
+                  </form>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </main>
-  </div>
-</body>
+        </section>
+      </main>
+    </div>
+
+    <script src="/assets/app.js?v=3"></script>
+  </body>
 </html>
