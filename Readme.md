@@ -1,312 +1,173 @@
 # GoCloudStorage
 
-A full-stack cloud file storage application built with **Go, MySQL, Redis, and Cloudflare R2**. Users can manage files through a browser, resume interrupted multipart uploads, and download content verified with SHA-256.
+A full-stack cloud storage application built with Go, MySQL, Redis, and Cloudflare R2. It supports content-addressable storage, resumable multipart uploads, integrity verification, and automated deployment to an Azure VM.
 
-## Highlight features
+**[Live demo](https://emulisygocloud.southeastasia.cloudapp.azure.com)** · **[Architecture and API](architecture.md)**
 
-- **Resumable multipart uploads** — files are split into 5 MiB chunks and streamed through the Go server to R2. Redis records upload sessions and completed parts so retries can skip chunks already stored.
-- **File integrity verification** — ordinary uploads are hashed on the server. Completed multipart objects are read back from R2 and checked against the expected SHA-256 and file size before metadata is saved.
-- **Content deduplication and fast upload** — shared content is identified by SHA-256, while each user retains a separate filename and file record. The fast-upload API can reuse an existing object without transferring its bytes again. See the current access-control limitation below.
-- **Account authentication** — bcrypt password hashing, signed JWTs in an HttpOnly cookie, and authentication middleware for protected pages and APIs.
-- **Personal file management** — upload, paginated listing, rename, download, and delete, with file operations scoped to the signed-in user's ID.
-- **Reference-aware deletion** — deleting a user-file record preserves content that other user-file records still reference; the final reference allows storage cleanup.
-- **Browser interface** — drag-and-drop file selection, upload progress, resumable transfer feedback, and account management using HTML, CSS, and JavaScript.
+## Features
 
-## Architecture
+- **Content-addressable storage (CAS)** — SHA-256 identifies stored content independently of filenames. Multiple user file records can reference one R2 object, avoiding duplicate storage.
+- **Fast upload and deduplication** — when matching content already exists, the application creates a user reference without uploading the bytes again.
+- **Resumable multipart uploads** — files are split into 5 MiB chunks. Redis tracks uploaded R2 parts so interrupted transfers can continue from the missing chunk.
+- **End-to-end integrity checks** — completed multipart objects are read back from R2 and verified against the expected SHA-256 digest and file size before metadata is committed.
+- **Reference-aware deletion** — removing one user's file preserves shared content until its final reference is deleted.
+- **Authenticated file management** — bcrypt password hashing, signed JWT cookies, user-scoped CRUD operations, pagination, renaming, upload progress, and drag-and-drop file selection.
+- **Production deployment** — Docker Compose runs Caddy, the Go application, MySQL, and Redis. Caddy provides automatic HTTPS, and GitHub Actions deploys pushes to `main` over SSH.
 
-```mermaid
-flowchart TB
-    Browser[Browser: HTML / CSS / JavaScript]
-    Server[Go net/http server :8080]
-    Auth[JWT authentication middleware]
-    Accounts[Account handlers]
-    Files[File and multipart handlers]
-    DB[(MySQL: users and file metadata)]
-    Cache[(Redis: upload sessions and part records)]
-    R2[(Cloudflare R2: objects and multipart data)]
+## Technology
 
-    Browser -->|HTTP requests and file bytes| Server
-    Server -->|Pages and static assets| Browser
-    Server -->|Registration and sign-in| Accounts
-    Server -->|Protected routes| Auth
-    Auth --> Accounts
-    Auth --> Files
-    Accounts --> DB
-    Files --> DB
-    Files --> Cache
-    Files -->|S3-compatible API| R2
-```
+| Area | Stack |
+| --- | --- |
+| Backend | Go, `net/http`, AWS SDK for Go v2 |
+| Frontend | HTML, CSS, JavaScript |
+| Metadata | MySQL 8.4 |
+| Upload state | Redis 7 |
+| Object storage | Cloudflare R2 |
+| Infrastructure | Docker Compose, Caddy, Ubuntu, Azure VM |
+| Delivery | GitHub Actions, SSH, rsync |
 
-The backend is a single Go application with separate packages for authentication, request handling, persistence, upload state, and object storage. File bytes pass through the backend; the browser does not receive R2 credentials or upload directly to R2.
+## Deploy to an Ubuntu Azure VM
 
-| Component | Responsibility | Technology |
-| --- | --- | --- |
-| Web interface | Pages, file selection, progress display, and API calls | HTML, CSS, JavaScript |
-| HTTP server | Method-aware routes, static assets, and request handling | Go `net/http` |
-| Authentication | Password verification and authenticated user identity | bcrypt, JWT HS256 |
-| Metadata store | Accounts, file ownership, names, hashes, and storage locations | MySQL 8.4 |
-| Upload state | Temporary sessions and completed multipart part information | Redis 7 |
-| Object store | Persistent file bytes and multipart assembly | Cloudflare R2 via AWS SDK for Go v2 |
-| Local infrastructure | Database and Redis containers | Docker Compose |
+### 1. Prepare Azure and external services
 
-### Data model
+Create or configure:
 
-```mermaid
-erDiagram
-    tbl_user ||--o{ tbl_user_file : owns
-    tbl_file ||--o{ tbl_user_file : references
-    tbl_user {
-        bigint id PK
-        varchar user_name
-        varchar email UK
-        varchar user_pwd
-    }
-    tbl_file {
-        bigint id PK
-        char file_sha UK
-        bigint file_size
-        varchar file_addr
-    }
-    tbl_user_file {
-        bigint id PK
-        bigint user_id FK
-        char file_sha256 FK
-        varchar file_name
-        bigint file_size
-        datetime upload_at
-        datetime last_update
-    }
-```
+- An Ubuntu Azure VM with at least 2 GiB RAM; 4 GiB is recommended when building the image on the VM.
+- The DNS name `emulisygocloud.southeastasia.cloudapp.azure.com` pointing to the VM.
+- Azure Network Security Group rules allowing TCP ports `22`, `80`, and `443`. Do not expose `8080`, `3306`, or `6379` publicly.
+- A Cloudflare R2 bucket and API credentials.
 
-`tbl_file` represents shared content. `tbl_user_file` represents a user's named reference to that content. This separation supports deduplication without making filenames global. API file IDs refer to `tbl_user_file.id`, not the shared content row. The full schema is in [doc/table.sql](doc/table.sql).
-
-### Multipart upload flow
-
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant G as Go backend
-    participant C as Redis
-    participant R as Cloudflare R2
-    participant D as MySQL
-
-    B->>B: Calculate file SHA-256
-    B->>G: POST /api/files/fast
-    G->>D: Look up reusable content
-    G-->>B: Reused or upload required
-    Note over B,D: Remaining steps apply when a transfer is required
-    B->>G: POST /api/uploads
-    G->>C: Look up existing user/hash session
-    opt New session
-        G->>R: Create multipart upload
-        G->>C: Save session
-    end
-    G-->>B: Chunk size, count, and session information
-    B->>G: GET /api/uploads/{filehash}
-    G->>C: Read completed chunk records
-    G-->>B: Uploaded chunk indices
-    loop Each missing chunk
-        B->>G: PUT /api/uploads/{filehash}/parts/{index}
-        G->>R: Stream part
-        G->>C: Save ETag and refresh expiry
-        G-->>B: Chunk accepted
-    end
-    B->>G: POST /api/uploads/{filehash}/completion
-    G->>R: Complete multipart object
-    G->>R: Read object to verify SHA-256 and size
-    G->>D: Save content and user-file metadata
-    G->>C: Remove completed session state
-    G-->>B: 201 Created
-```
-
-Upload sessions are scoped by user ID and file hash. New sessions expire after 24 hours, and successful part uploads refresh the session and part-state expiry. The client uploads missing chunks sequentially. Retrying with the same file can resume an active session; expired sessions require a new upload. The API uses zero-based chunk indices, which the backend translates to R2's one-based part numbers.
-
-## API reference
-
-**Local base URL:** `http://localhost:8080`
-
-### Request and authentication conventions
-
-- Fields below are case-sensitive. Form requests use `application/x-www-form-urlencoded`, except ordinary file uploads and raw chunk uploads.
-- Sign-in sets the `access_token` cookie. Protected APIs require this cookie; they do not use an Authorization bearer header.
-- JWTs expire after 24 hours. The cookie uses `HttpOnly` and `SameSite=Lax`; `Secure` is set when the backend receives a TLS request.
-- `{id}` is a positive user-file record ID. `{filehash}` is a 64-character hexadecimal SHA-256 hash.
-- Errors are generally plain text rather than a JSON error envelope. Common statuses are `400` for invalid input, `401` for missing/invalid authentication, `404` for unavailable files or sessions, `409` for conflicts, and `500` for backend failures.
-
-### Accounts and sessions
-
-| Method | Endpoint | Authentication | Form fields | Success response |
-| --- | --- | --- | --- | --- |
-| POST | `/api/users` | Public | `userName`, `email`, `userPwd` | `201` |
-| POST | `/api/sessions` | Public | `email`, `userPwd` | `200`, `SUCCESS`, and access-token cookie |
-| POST | `/api/sessions/signout` | No valid session required | None | `204`; clears the cookie |
-| GET | `/api/users/me` | Required | None | `200` JSON: `username`, `email`, `signupAt`, `lastActive` |
-| PATCH | `/api/users/me/name` | Required | `userName` | `200`, `SUCCESS` |
-| PATCH | `/api/users/me/password` | Required | `currentPwd`, `newPwd` | `200`, `SUCCESS` |
-| PATCH | `/api/users/me/email` | Required | `email` | `200`, `SUCCESS` |
-
-### Files
-
-All endpoints in this table require authentication.
-
-| Method | Endpoint | Request | Success response |
-| --- | --- | --- | --- |
-| POST | `/api/files` | `multipart/form-data` with field `file` | `201`, `SUCCESS` |
-| POST | `/api/files/fast` | Form: `filehash`, `filename`, `filesize` in bytes | `201` when reused; `200` when upload is required |
-| GET | `/api/files` | Query: `page` (default `1`), `pageSize` (default `20`) | `200`, JSON array of file records |
-| GET | `/api/files/{id}/content` | No body | `200`, file content with download headers |
-| PATCH | `/api/files/{id}` | Form: `name` | `200`, JSON: `id`, `fileName` |
-| DELETE | `/api/files/{id}` | No body | `204` |
-
-Each file-list record contains `id`, `userId` (a string), `fileHash`, `fileName`, `fileSize`, `uploadAt`, and `lastUpdated`.
-
-Fast-upload responses:
-
-```json
-{ "reused": true, "status": "completed" }
-```
-
-```json
-{ "reused": false, "status": "upload_required" }
-```
-
-### Multipart uploads
-
-All endpoints in this table require authentication.
-
-| Method | Endpoint | Request | Success response |
-| --- | --- | --- | --- |
-| POST | `/api/uploads` | Form: `filehash`, `filename`, `filesize` in bytes | `201` for a new session; `200` for an existing session |
-| GET | `/api/uploads/{filehash}` | No body | `200`, JSON: `fileHash`, `chunkCount`, `uploadedChunks`, `status` |
-| PUT | `/api/uploads/{filehash}/parts/{index}` | Raw bytes, `application/octet-stream` | `200`, JSON: `status`, `uploadId`, `index` |
-| POST | `/api/uploads/{filehash}/completion` | No body | `201`, JSON: `status`, `uploadId`, `fileHash`, `fileSize` |
-
-Initialization returns `fileHash`, `fileSize`, `fileName`, `uploadId`, `chunkSize`, `chunkCount`, `status`, and `createdAt`. Chunks are 5 MiB except for the final chunk, which may be smaller; the implementation permits at most 10,000 parts. Completion checks that every expected chunk is present and verifies the assembled object's size and hash.
-
-Example status response for a three-part upload with two parts stored (`fileHash` abbreviated for readability):
-
-```json
-{
-  "fileHash": "<64-character-sha256>",
-  "chunkCount": 3,
-  "uploadedChunks": [0, 1],
-  "status": "uploading"
-}
-```
-
-### Example: sign in, upload, and list files
-
-These examples use curl and a local cookie jar. On Windows PowerShell, use `curl.exe` if `curl` resolves to a PowerShell alias. Replace the credentials and file path with your own.
+### 2. Bootstrap the VM
 
 ```sh
-curl -X POST http://localhost:8080/api/users --data-urlencode "userName=demo" --data-urlencode "email=demo@example.com" --data-urlencode "userPwd=example-password"
-curl -c cookies.txt -X POST http://localhost:8080/api/sessions --data-urlencode "email=demo@example.com" --data-urlencode "userPwd=example-password"
-curl -b cookies.txt -F "file=@example.txt" http://localhost:8080/api/files
-curl -b cookies.txt "http://localhost:8080/api/files?page=1&pageSize=20"
-curl -b cookies.txt -X POST http://localhost:8080/api/sessions/signout
+git clone https://github.com/Emulisy/Go-Cloud-Storage.git
+cd Go-Cloud-Storage
+sudo bash deploy/setup-server.sh
 ```
 
-The cookie jar contains a session credential; keep it out of version control.
+The script installs Docker Engine and the Compose plugin, copies the project to `/opt/gocloudstorage`, creates a protected `.env`, and grants the SSH user Docker access. Log out and reconnect after it completes.
 
-## Getting started
+If Ubuntu already has the conflicting `docker-compose-v2` package, remove it and rerun setup:
 
-### Prerequisites
+```sh
+sudo apt-get remove -y docker-compose-v2
+sudo apt-get --fix-broken install -y
+sudo bash deploy/setup-server.sh
+```
 
-- Go `1.26.4`, as declared in `go.mod`.
-- Docker with Docker Compose.
-- A Cloudflare R2 bucket and access credentials for that bucket.
-- Available local ports `8080`, `3306`, and `6379`.
+### 3. Configure production secrets
 
-Run commands from the directory containing `main.go` and `compose.yaml`.
-
-### Environment configuration
-
-Create or update `.env` with your own values. The file is ignored by Git, and existing process environment variables take precedence when the Go application loads it.
+Edit `/opt/gocloudstorage/.env`:
 
 ```dotenv
-MYSQL_ROOT_PASSWORD=replace-with-a-local-root-password
+MYSQL_ROOT_PASSWORD=replace-with-a-strong-root-password
 MYSQL_DATABASE=gocloudstorage
 MYSQL_USER=gocloudstorage
-MYSQL_PASSWORD=replace-with-a-local-app-password
+MYSQL_PASSWORD=replace-with-a-strong-app-password
 
-REDIS_ADDR=127.0.0.1:6379
 REDIS_DB=0
 REDIS_PASSWORD=
 
-JWT_SECRET=replace-with-a-random-secret-of-at-least-32-bytes
+JWT_SECRET=replace-with-at-least-32-random-bytes
 
 R2_ACCESS_KEY_ID=replace-with-your-access-key-id
 R2_SECRET_ACCESS_KEY=replace-with-your-secret-access-key
 R2_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
-R2_BUCKET=replace-with-your-test-bucket-name
+R2_BUCKET=replace-with-your-bucket-name
 R2_REGION=auto
 ```
 
-The R2 endpoint must be an HTTPS service URL without a bucket path. The supplied local Redis container has no password, so leave `REDIS_PASSWORD` empty for this configuration.
+Protect and validate the file:
 
-### Run locally
+```sh
+chmod 600 /opt/gocloudstorage/.env
+cd /opt/gocloudstorage
+docker compose config --quiet
+```
+
+The R2 endpoint must be an HTTPS service URL without a bucket path. The supplied Redis container does not require a password, so `REDIS_PASSWORD` remains empty.
+
+### 4. Configure GitHub Actions
+
+Add these repository secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `AZURE_VM_HOST` | `emulisygocloud.southeastasia.cloudapp.azure.com` |
+| `AZURE_VM_USER` | VM SSH username |
+| `AZURE_VM_SSH_PRIVATE_KEY` | Complete private deployment key |
+| `AZURE_VM_SSH_KNOWN_HOSTS` | Verified SSH host-key entry for the VM |
+
+The workflow in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main` and can also be started manually. It:
+
+1. Synchronizes the repository to `/opt/gocloudstorage` while preserving `.env`.
+2. Validates the Compose and Caddy configuration.
+3. Pulls service images and rebuilds the Go application.
+4. Starts the stack and waits for service health checks.
+
+### 5. Verify deployment
+
+```sh
+cd /opt/gocloudstorage
+docker compose ps
+docker compose logs --tail=100 caddy app
+curl -I http://127.0.0.1 -H 'Host: emulisygocloud.southeastasia.cloudapp.azure.com'
+```
+
+Then open the [live application](https://emulisygocloud.southeastasia.cloudapp.azure.com).
+
+## Run locally
+
+### Prerequisites
+
+- Go `1.26.4`, as declared in `go.mod`
+- Docker with Docker Compose
+- A Cloudflare R2 bucket and credentials
+
+Create `.env` using the variables from the deployment section. For host-based development, optionally set:
+
+```dotenv
+REDIS_ADDR=127.0.0.1:6379
+```
+
+Start MySQL and Redis, then run the Go application:
 
 ```sh
 docker compose up -d mysql redis
-docker compose ps
-docker compose logs mysql redis
-```
-
-Once both services are ready:
-
-```sh
 go mod download
 go run .
 ```
 
-Open [GoCloudStorage](http://localhost:8080) and register an account. Keep the working directory at the project root so the server can find `static/`.
+Open [http://localhost:8080](http://localhost:8080). MySQL initializes new data volumes from [`doc/table.sql`](doc/table.sql).
 
-MySQL loads `doc/table.sql` when its data volume is first initialized. Existing volumes are not automatically migrated after schema changes. To stop services while retaining data, run `docker compose stop`.
+To run the complete containerized stack instead, use `docker compose up -d --build`. Caddy publishes ports 80 and 443; the application remains private inside the Compose network.
 
-The local setup above runs Go on the host. The complete Compose stack runs with `docker compose up -d`: Caddy publishes ports `80` and `443`, the application is reachable only through the private Compose network, and MySQL and Redis remain bound to loopback.
+## Documentation
 
-## Deploy to an Ubuntu Azure VM
-
-The production deployment runs Caddy, the Go application, MySQL, and Redis in Docker Compose. Caddy obtains HTTPS certificates automatically for `emulisygocloud.southeastasia.cloudapp.azure.com` and proxies to the application over the private Compose network. Only SSH, HTTP, and HTTPS should be allowed by the Azure Network Security Group; do not open ports `8080`, `3306`, or `6379`.
-
-On the VM, clone the repository and run the one-time setup:
-
-```sh
-git clone YOUR_REPOSITORY_URL goCloudStorage
-cd goCloudStorage
-sudo bash deploy/setup-server.sh
-nano /opt/gocloudstorage/.env
-```
-
-Use the environment variables shown above in `/opt/gocloudstorage/.env`, then log out and back in so Docker group membership is active.
-
-Add `AZURE_VM_HOST`, `AZURE_VM_USER`, `AZURE_VM_SSH_PRIVATE_KEY`, and `AZURE_VM_SSH_KNOWN_HOSTS` as GitHub Actions secrets. Generate the known-hosts value from a trusted machine with `ssh-keyscan -H emulisygocloud.southeastasia.cloudapp.azure.com`, verify its fingerprint against the VM, and save the verified output. Pushes to `main` synchronize the repository while preserving the VM's `.env`, validate the Caddy configuration, and restart the complete Compose stack. The workflow can also be started manually with **Run workflow** in GitHub Actions.
+- [Architecture, CAS data model, upload protocol, and API reference](architecture.md)
+- [Database schema](doc/table.sql)
+- [Deployment workflow](.github/workflows/deploy.yml)
 
 ## Project structure
 
 ```text
 .
-|-- main.go              # Startup and HTTP routes
-|-- auth/                # JWT and authentication middleware
-|-- handler/             # Pages, accounts, files, and multipart handlers
-|-- db/                  # MySQL queries and metadata transactions
-|-- cache/               # Redis connection and upload state types
-|-- storage/             # R2 object and multipart operations
-|-- util/                # Shared helpers, including SHA-256
-|-- static/
-|   |-- view/            # HTML pages
-|   `-- assets/          # CSS, JavaScript, and favicon
-|-- doc/table.sql        # Database schema
-|-- compose.yaml         # Caddy, application, MySQL, and Redis services
-|-- dockerfile           # Multi-stage application image
-|-- deploy/              # Caddy configuration and Ubuntu setup script
-|-- .github/workflows/   # Continuous deployment workflow
-`-- go.mod               # Go version and dependencies
+|-- auth/                  # JWT authentication and middleware
+|-- cache/                 # Redis client and upload state
+|-- db/                    # MySQL access and metadata operations
+|-- deploy/                # Caddy configuration and VM setup
+|-- doc/table.sql          # Database schema
+|-- handler/               # HTTP handlers
+|-- static/                # Browser interface
+|-- storage/               # Cloudflare R2 integration
+|-- architecture.md        # Detailed design and API reference
+|-- compose.yaml           # Production service topology
+|-- dockerfile             # Go application image
+`-- main.go                # Application entry point and routes
 ```
 
 ## Current limitations
 
-- Fast upload currently reuses content based on hash and size without proving the caller owns it. Private multi-user deployment requires restricting reuse or adding ownership verification.
-- MySQL and R2 operations are not one atomic transaction. Objects retained after uncertain failures need reconciliation; expired Redis sessions also require abandoned multipart-upload cleanup.
-- A multipart cancellation handler exists, but it is not registered as an HTTP route.
-- No Go test files were present when this documentation was written. `go build ./...`, `go vet ./...`, and `go test ./...` are development check commands, not evidence of tested production readiness.
+- Fast upload reuses content by hash and size; a hardened multi-tenant deployment should additionally verify authorization to reference matching content.
+- MySQL and R2 changes are not atomic, so uncertain failures may require object reconciliation.
+- Expired Redis sessions require cleanup of abandoned R2 multipart uploads.
