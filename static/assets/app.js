@@ -5,10 +5,88 @@
   const pageName = document.body.dataset.page;
   const ordinaryLimit = 100 * 1024 * 1024;
 
+  // Small, shared inline icons; user content never enters SVG markup.
+  const iconPaths = {
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+    more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    download: '<path d="M12 3v12m-4-4 4 4 4-4M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+    rename: '<path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14Z"/>',
+    delete: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>'
+  };
+  function makeIcon(kind) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", class: "icon" })) node.setAttribute(key, value);
+    node.innerHTML = iconPaths[kind];
+    return node;
+  }
+
+  const sidebar = $("#app-sidebar"), sidebarToggle = $("#sidebar-toggle");
+  function closeSidebar(returnFocus = true) {
+    if (!sidebar) return;
+    sidebar.classList.remove("is-open");
+    sidebarToggle.setAttribute("aria-expanded", "false");
+    $(".sidebar-backdrop").hidden = true;
+    document.body.classList.remove("navigation-open");
+    $(".app-main").inert = false;
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
+    if (returnFocus) sidebarToggle.focus();
+  }
+  if (sidebar) {
+    sidebarToggle.addEventListener("click", () => {
+      sidebar.classList.add("is-open");
+      sidebar.setAttribute("role", "dialog");
+      sidebar.setAttribute("aria-modal", "true");
+      sidebarToggle.setAttribute("aria-expanded", "true");
+      $(".sidebar-backdrop").hidden = false;
+      document.body.classList.add("navigation-open");
+      $(".app-main").inert = true;
+      $(".mobile-close", sidebar).focus();
+    });
+    document.querySelectorAll("[data-close-sidebar]").forEach(button => button.addEventListener("click", () => closeSidebar()));
+    sidebar.addEventListener("keydown", event => {
+      if (!sidebar.classList.contains("is-open")) return;
+      if (event.key === "Escape") { event.preventDefault(); closeSidebar(); }
+      if (event.key === "Tab") {
+        const items = [...sidebar.querySelectorAll('a, button:not(:disabled)')].filter(node => node.getClientRects().length);
+        const first = items[0], last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    });
+    matchMedia("(max-width: 760px)").addEventListener("change", () => closeSidebar(false));
+  }
+
+  const uploadDialog = $("#upload-dialog");
+  if (uploadDialog) {
+    let uploadTrigger;
+    document.querySelectorAll("[data-open-upload]").forEach(button => button.addEventListener("click", () => {
+      uploadTrigger = button;
+      uploadDialog.showModal();
+      $("#upload-file").focus();
+    }));
+    $("#close-upload").addEventListener("click", () => uploadDialog.close());
+    uploadDialog.addEventListener("close", () => uploadTrigger?.focus());
+  }
+
+  function closeFileMenus(except) {
+    document.querySelectorAll(".file-menu[open]").forEach(menu => {
+      if (menu !== except) { menu.open = false; $("summary", menu).setAttribute("aria-expanded", "false"); }
+    });
+  }
+  document.addEventListener("click", event => {
+    const menu = event.target.closest(".file-menu");
+    closeFileMenus(menu);
+  });
+
   function status(node, message = "", error = false) {
     if (!node) return;
     node.textContent = message;
     node.classList.toggle("is-error", error);
+    if (node.id === "upload-status" && $("#upload-form")?.getAttribute("aria-busy") === "true") {
+      const button = $('#upload-form button[type="submit"]');
+      button.textContent = /Verifying/.test(message) ? "Verifying…" : /Preparing|Checking/.test(message) ? "Preparing…" : "Uploading…";
+    }
   }
 
   function sizeLabel(size) {
@@ -200,42 +278,95 @@
       wrap.className = "file-cell";
       const kind = document.createElement("span");
       kind.className = "file-type";
-      kind.textContent = fileKind(file.fileName);
-      const copy = document.createElement("span");
+      kind.append(makeIcon("file"));
+      const copy = document.createElement("div");
+      copy.className = "file-copy";
       const name = document.createElement("strong");
       name.className = "stored-name";
       name.textContent = file.fileName;
       const hash = document.createElement("span");
       hash.className = "file-hash";
-      hash.textContent = file.fileHash ? `SHA-256 ${file.fileHash.slice(0, 12)}…` : "";
+      hash.textContent = file.fileHash ? `SHA-256 ${file.fileHash}` : "";
       copy.append(name);
-      if (file.fileHash) copy.append(hash);
+      const details = document.createElement("details");
+      details.className = "file-details";
+      const summary = document.createElement("summary");
+      summary.textContent = `${fileKind(file.fileName)} · Details`;
+      summary.setAttribute("aria-label", `View details for ${file.fileName}`);
+      const uploaded = document.createElement("span");
+      uploaded.className = "file-hash";
+      uploaded.textContent = `Uploaded ${dateLabel(file.uploadAt)}`;
+      const modified = document.createElement("span");
+      modified.className = "file-hash";
+      modified.textContent = `Modified ${dateLabel(file.lastUpdated)}`;
+      details.append(summary, uploaded, modified);
+      if (file.fileHash) details.append(hash);
+      copy.append(details);
       wrap.append(kind, copy);
       nameCell.append(wrap);
       row.append(nameCell);
-      for (const text of [sizeLabel(file.fileSize), dateLabel(file.uploadAt), dateLabel(file.lastUpdated)]) {
+      for (const [label, text] of [["Size", sizeLabel(file.fileSize)], ["Uploaded", dateLabel(file.uploadAt)], ["Modified", dateLabel(file.lastUpdated)]]) {
         const cell = document.createElement("td");
         cell.textContent = text;
+        cell.dataset.label = label;
+        cell.className = "data" + (label === "Uploaded" ? " uploaded-column" : "");
         row.append(cell);
       }
       const controls = document.createElement("td"), group = document.createElement("div");
       group.className = "table-actions";
+      const menu = document.createElement("details");
+      menu.className = "file-menu";
+      const trigger = document.createElement("summary");
+      trigger.setAttribute("role", "button");
+      trigger.setAttribute("aria-label", `Actions for ${file.fileName}`);
+      trigger.setAttribute("title", `Actions for ${file.fileName}`);
+      trigger.setAttribute("aria-haspopup", "menu");
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.append(makeIcon("more"));
+      const panel = document.createElement("div");
+      panel.className = "file-menu-panel";
+      panel.setAttribute("role", "menu");
+      panel.setAttribute("aria-label", `Actions for ${file.fileName}`);
       const download = document.createElement("a");
       download.className = "row-action";
       download.href = `/api/files/${encodeURIComponent(file.id)}/content`;
       download.download = file.fileName;
-      download.textContent = "Download";
+      download.append(makeIcon("download"), document.createTextNode("Download"));
+      download.setAttribute("role", "menuitem");
       download.setAttribute("aria-label", `Download ${file.fileName}`);
-      group.append(download);
+      download.addEventListener("click", () => { menu.open = false; trigger.focus(); });
+      panel.append(download);
       for (const kindName of ["Rename", "Delete"]) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "row-action" + (kindName === "Delete" ? " danger" : "");
-        button.textContent = kindName;
+        button.append(makeIcon(kindName.toLowerCase()), document.createTextNode(kindName));
+        button.setAttribute("role", "menuitem");
         button.setAttribute("aria-label", `${kindName} ${file.fileName}`);
-        button.addEventListener("click", () => openAction(kindName, file));
-        group.append(button);
+        button.addEventListener("click", () => { menu.open = false; trigger.focus(); openAction(kindName, file); });
+        panel.append(button);
       }
+      menu.append(trigger, panel);
+      menu.addEventListener("toggle", () => {
+        trigger.setAttribute("aria-expanded", String(menu.open));
+        if (menu.open) closeFileMenus(menu);
+      });
+      menu.addEventListener("keydown", event => {
+        const items = [...panel.querySelectorAll('[role="menuitem"]')];
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); menu.open = false; trigger.focus(); }
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          menu.open = true;
+          closeFileMenus(menu);
+          let index = items.indexOf(document.activeElement);
+          if (event.key === "Home") index = 0;
+          else if (event.key === "End") index = items.length - 1;
+          else index = (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+          items[index].focus();
+        }
+      });
+      menu.addEventListener("focusout", event => { if (!menu.contains(event.relatedTarget)) menu.open = false; });
+      group.append(menu);
       controls.append(group);
       row.append(controls);
       rows.append(row);
@@ -245,11 +376,15 @@
   async function loadFiles(target = page) {
     if (!rows || loading) return;
     loading = true;
+    rows.setAttribute("aria-busy", "true");
     const previous = $("#previous-page"), next = $("#next-page"), refresh = $("#refresh-files");
     if (previous) previous.disabled = true;
     if (next) next.disabled = true;
     if (refresh) refresh.disabled = true;
+    $("#files-status").classList.remove("sr-only");
     status($("#files-status"), "Loading files…");
+    $("#files-empty").hidden = true;
+    $(".file-browser").setAttribute("aria-busy", "true");
     try {
       let files = await (await request(`/api/files?page=${target}&pageSize=${pageSize}`)).json();
       if (!Array.isArray(files)) throw new Error("Unable to read the file list.");
@@ -262,12 +397,22 @@
       fileCount = files.length;
       renderFiles(files);
       status($("#files-status"), files.length ? "" : "No files yet. Upload a file to get started.");
+      $("#files-status").classList.toggle("sr-only", !files.length);
+      $("#files-empty").hidden = files.length !== 0;
+      $(".table-scroll").hidden = files.length === 0;
+      $("#file-count").hidden = false;
+      $("#file-count").textContent = String(files.length);
+      $("#files-summary").textContent = files.length ? `${files.length} ${files.length === 1 ? "file" : "files"} on this page` : "No files stored";
       if ($("#pager")) $("#pager").hidden = page === 1 && !hasNext;
       if ($("#page-label")) $("#page-label").textContent = `Page ${page}`;
     } catch (error) {
+      $("#files-status").classList.remove("sr-only");
+      $(".table-scroll").hidden = !rows.children.length;
       status($("#files-status"), error.message + " Select Refresh to retry.", true);
     } finally {
       loading = false;
+      rows.setAttribute("aria-busy", "false");
+      $(".file-browser").setAttribute("aria-busy", "false");
       if (previous) previous.disabled = page === 1;
       if (next) next.disabled = !hasNext;
       if (refresh) refresh.disabled = false;
@@ -284,9 +429,10 @@
   const dialog = $("#file-dialog"), actionForm = $("#file-action-form");
   function openAction(kind, file) {
     action = { kind, file };
-    $("#dialog-title").textContent = `${kind} file`;
+    $("#dialog-title").textContent = kind === "Delete" ? "Delete file?" : "Rename file";
+    dialog.dataset.destructive = String(kind === "Delete");
     $("#dialog-description").textContent = kind === "Delete"
-      ? `Delete “${file.fileName}” from your files? This cannot be undone.`
+      ? `“${file.fileName}” will be permanently removed from your files. This cannot be undone.`
       : `Choose a new name for “${file.fileName}”.`;
     $("#rename-field").hidden = kind !== "Rename";
     $("#rename-input").required = kind === "Rename";
@@ -296,6 +442,8 @@
     $("#dialog-submit").classList.toggle("button-primary", kind !== "Delete");
     status($("#dialog-status"));
     dialog.showModal();
+    if (kind === "Delete") $("#dialog-cancel").focus();
+    else { $("#rename-input").focus(); $("#rename-input").select(); }
   }
   if (dialog) {
     $("#dialog-cancel").addEventListener("click", () => dialog.close());
@@ -317,6 +465,8 @@
         );
         dialog.close();
         await loadFiles(kind === "Delete" && fileCount === 1 && page > 1 ? page - 1 : page);
+        $("#refresh-files").focus();
+        status($("#page-status"), kind === "Delete" ? `Deleted “${file.fileName}”.` : `Renamed to “${name}”.`);
       } catch (error) {
         status($("#dialog-status"), error.message, true);
       } finally {
@@ -330,6 +480,7 @@
 
   const cancelUploadButton = $("#cancel-upload");
   let selectedFile = null, uploading = false, activeMultipart = null;
+  $('button[type="submit"]', uploadForm).disabled = true;
 
   function cancelledUploadError() {
     const error = new Error("Upload cancelled.");
@@ -339,10 +490,25 @@
 
   function selectFile(file) {
     selectedFile = file || null;
+    $('button[type="submit"]', uploadForm).disabled = !selectedFile;
+    $("#drop-zone").classList.toggle("has-file", Boolean(file));
     status($("#selected-file"), file ? `${file.name} · ${sizeLabel(file.size)}` : "");
     status($("#upload-status"));
     progress.hidden = true;
     progress.value = 0;
+    $("#transfer-readout").hidden = true;
+    $("#transfer-metadata").hidden = true;
+    $("#upload-complete-link").hidden = true;
+    $("#upload-status").classList.remove("is-success");
+    $('button[type="submit"]', uploadForm).textContent = "Upload file";
+  }
+
+  function transferProgress(uploaded, total) {
+    const percent = total ? Math.min(100, uploaded / total * 100) : 100;
+    progress.value = percent;
+    $("#transfer-readout").hidden = false;
+    $("#upload-bytes").textContent = `${sizeLabel(uploaded)} / ${sizeLabel(total)}`;
+    $("#upload-percent").textContent = `${Math.floor(percent)}%`;
   }
 
   async function sha256Hex(file) {
@@ -356,7 +522,8 @@
       xhr.open("POST", "/api/files");
       xhr.upload.onprogress = event => {
         if (event.lengthComputable) {
-          progress.value = event.loaded / event.total * 100;
+          // XHR counts the multipart envelope too; scale to the file's byte size.
+          transferProgress(Math.floor(file.size * event.loaded / event.total), file.size);
           status($("#upload-status"), event.loaded === event.total ? "Saving your file…" : `Uploading… ${Math.floor(progress.value)}%`);
         }
       };
@@ -376,14 +543,21 @@
     if (!globalThis.crypto?.subtle) {
       throw new Error("Large uploads need HTTPS or localhost. Open the app using a secure connection.");
     }
-    status($("#upload-status"), "Calculating SHA-256…");
+    progress.removeAttribute("value");
+    status($("#upload-status"), "Preparing your file…");
     const hash = await sha256Hex(file);
+    $("#transfer-metadata").hidden = false;
+    $("#upload-hash").textContent = hash;
+    $("#upload-chunks").textContent = "Checking stored content…";
     status($("#upload-status"), "Checking for existing file…");
     const fastUpload = await (await request("/api/files/fast", {
       method: "POST",
       body: new URLSearchParams({ filehash: hash, filename: file.name, filesize: String(file.size) })
     })).json();
-    if (fastUpload.reused) return;
+    if (fastUpload.reused) {
+      $("#upload-chunks").textContent = "Existing content reused; no parts transferred.";
+      return { reused: true };
+    }
 
     const upload = await (await request("/api/uploads", {
       method: "POST",
@@ -407,11 +581,16 @@
         throw new Error("Unable to read upload progress. Please retry.");
       }
       const completed = new Set(info.uploadedChunks);
-      if (completed.size) status($("#upload-status"), `Resuming… ${completed.size} of ${chunkCount} parts already stored.`);
+      let savedBytes = Array.from(completed).reduce((total, index) => total + Math.min(chunkSize, file.size - index * chunkSize), 0);
+      const showSavedProgress = () => {
+        transferProgress(savedBytes, file.size);
+        $("#upload-chunks").textContent = `${completed.size} / ${chunkCount}`;
+      };
+      showSavedProgress();
+      if (completed.size) status($("#upload-status"), "Resuming your upload…");
       for (let index = 0; index < chunkCount; index++) {
-        progress.value = completed.size / chunkCount * 100;
         if (!completed.has(index)) {
-          status($("#upload-status"), `Uploading part ${index + 1} of ${chunkCount}…`);
+          status($("#upload-status"), completed.size === info.uploadedChunks.length && completed.size ? "Resuming your upload…" : "Uploading your file…");
           await request(`/api/uploads/${hash}/parts/${index}`, {
             method: "PUT",
             headers: { "Content-Type": "application/octet-stream" },
@@ -419,8 +598,9 @@
             signal: multipart.controller.signal
           });
           completed.add(index);
+          savedBytes += Math.min(chunkSize, file.size - index * chunkSize);
         }
-        progress.value = completed.size / chunkCount * 100;
+        showSavedProgress();
       }
     } catch (error) {
       if (!multipart.cancelRequested) throw error;
@@ -438,6 +618,7 @@
 
     status($("#upload-status"), "Verifying and saving your file…");
     await request(`/api/uploads/${hash}/completion`, { method: "POST" });
+    return { verified: true };
   }
 
   cancelUploadButton.addEventListener("click", () => {
@@ -475,29 +656,44 @@
     }
     uploading = true;
     fileInput.disabled = $('button[type="submit"]', uploadForm).disabled = true;
+    $('button[type="submit"]', uploadForm).textContent = "Uploading…";
+    uploadForm.setAttribute("aria-busy", "true");
     progress.hidden = false;
     progress.value = 0;
+    $("#transfer-readout").hidden = true;
+    $("#transfer-metadata").hidden = true;
+    $("#upload-complete-link").hidden = true;
+    $("#upload-status").classList.remove("is-success");
     status($("#upload-status"), "Preparing upload…");
     try {
-      if (file.size <= ordinaryLimit) await ordinaryUpload(file);
-      else await multipartUpload(file);
-      progress.value = 100;
-      status($("#upload-status"), `Uploaded “${file.name}”.`);
+      const result = file.size <= ordinaryLimit ? await ordinaryUpload(file) : await multipartUpload(file);
+      transferProgress(file.size, file.size);
+      status($("#upload-status"), `Upload complete. “${file.name}” is in your files.${result?.verified ? " Integrity verified." : result?.reused ? " Existing content reused." : ""}`);
+      $("#upload-status").classList.add("is-success");
+      $("#upload-complete-link").hidden = false;
+      $('button[type="submit"]', uploadForm).textContent = "Upload file";
       uploadForm.reset();
       selectedFile = null;
-      status($("#selected-file"));
+      $("#drop-zone").classList.remove("has-file");
       if (pageName === "files") await loadFiles(1);
     } catch (error) {
       if (error.name === "UploadCancelled") {
         progress.hidden = true;
         progress.value = 0;
+        $("#transfer-readout").hidden = true;
+        $('button[type="submit"]', uploadForm).textContent = "Upload file";
         status($("#upload-status"), error.message);
       } else {
-        status($("#upload-status"), error.message + " Choose Upload file to retry.", true);
+        if (!progress.hasAttribute("value")) progress.hidden = true;
+        const integrityError = /size or hash does not match/i.test(error.message);
+        status($("#upload-status"), (integrityError ? "Integrity failure. " : "Upload failed. ") + error.message + " Select Retry upload to try again.", true);
+        $('button[type="submit"]', uploadForm).textContent = "Retry upload";
       }
     } finally {
       uploading = false;
-      fileInput.disabled = $('button[type="submit"]', uploadForm).disabled = false;
+      uploadForm.setAttribute("aria-busy", "false");
+      fileInput.disabled = false;
+      $('button[type="submit"]', uploadForm).disabled = !selectedFile;
     }
   });
 

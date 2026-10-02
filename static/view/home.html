@@ -1,191 +1,67 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Browse, download, rename, and upload files in goCloudStorage.">
-    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-    <title>My files — goCloudStorage</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=3">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-      body.rhine-theme { --r-ink:#11130f; --r-paper:#f4f5f1; --r-white:#fff; --r-green:#9ac43c; --r-line:rgba(17,19,15,.2); background:var(--r-paper); color:var(--r-ink); }
-      body.rhine-theme::before { background:linear-gradient(rgba(17,19,15,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(17,19,15,.025) 1px,transparent 1px); background-size:100% 36px,36px 100%; mix-blend-mode:normal; }
-      .rhine-theme .app-shell { grid-template-columns:260px minmax(0,1fr); min-height:100vh; }
-      .rhine-theme .sidebar { background:rgba(255,255,255,.9); border-right:1px solid var(--r-ink); box-shadow:none; }
-      .rhine-theme .sidebar::before { inset:16px; border:1px solid var(--r-line); background:none; }
-      .rhine-theme .sidebar-head { border-bottom:1px solid var(--r-ink); }
-      .rhine-theme .brand-mark { background:var(--r-ink); color:var(--r-white); border:0; box-shadow:3px 3px 0 var(--r-green); }
-      .rhine-theme .brand-title { color:var(--r-ink); font-size:22px; letter-spacing:-.03em; }
-      .rhine-theme .brand-sub { color:#62675d; letter-spacing:.1em; }
-      .rhine-theme .sidebar-user { background:var(--r-ink); border:0; color:var(--r-white); }
-      .rhine-theme .sidebar-user strong { color:var(--r-white); }
-      .rhine-theme .user-avatar { background:var(--r-green); color:var(--r-ink); border:0; }
-      .rhine-theme .sidebar-nav { border-top:1px solid var(--r-line); border-bottom:1px solid var(--r-line); }
-      .rhine-theme .sidebar-nav a { border:0; border-left:5px solid transparent; color:var(--r-ink); background:transparent; letter-spacing:.08em; }
-      .rhine-theme .sidebar-nav a:hover { background:rgba(154,196,60,.14); }
-      .rhine-theme .sidebar-nav a.is-active { background:var(--r-ink); color:var(--r-white); border-left-color:var(--r-green); }
-      .rhine-theme .sidebar-foot { border-top:0; }
-      .rhine-theme .app-main { background:linear-gradient(135deg,rgba(154,196,60,.08),transparent 35%); }
-      .rhine-theme .topbar { min-height:82px; background:rgba(255,255,255,.8); border-bottom:1px solid var(--r-ink); box-shadow:none; padding:18px 28px; }
-      .rhine-theme .topbar-title { display:inline-block; background:var(--r-ink); color:var(--r-white); padding:8px 16px; letter-spacing:.14em; transform:skewX(-6deg); }
-      .rhine-theme .led-indicator { background:var(--r-green); color:var(--r-ink); border:1px solid var(--r-ink); padding:6px 10px; }
-      .rhine-theme .led-indicator::before { display:none; }
-      .rhine-theme .content { padding:clamp(22px,4vw,54px); }
-      .rhine-theme .card,.rhine-theme .surface { background:rgba(255,255,255,.95); border:1px solid var(--r-ink); border-radius:0; box-shadow:10px 10px 0 rgba(17,19,15,.11); }
-      .rhine-theme .card::before { height:8px; background:var(--r-green); }
-      .rhine-theme .card-head { background:var(--r-ink); color:var(--r-white); border-bottom:0; }
-      .rhine-theme .card-head h2,.rhine-theme .card-head h3 { color:var(--r-white); }
-      .rhine-theme .chip { border:1px solid var(--r-white); background:transparent; color:var(--r-white); box-shadow:none; }
-      .rhine-theme .upload-card { background:rgba(255,255,255,.96); }
-      .rhine-theme .upload-card .card-head { padding:12px 14px; margin:-18px -18px 18px; }
-      .rhine-theme .upload-zone { background:linear-gradient(135deg,rgba(154,196,60,.13),rgba(255,255,255,.8)); border:1px dashed var(--r-ink); }
-      .rhine-theme .file-picker + label { background:var(--r-ink); color:var(--r-white); border:1px solid var(--r-ink); box-shadow:4px 4px 0 var(--r-green); }
-      .rhine-theme .button { border:1px solid var(--r-ink); border-radius:0; box-shadow:3px 3px 0 var(--r-ink); }
-      .rhine-theme .button-primary { background:var(--r-green); color:var(--r-ink); }
-      .rhine-theme .button-secondary { background:var(--r-white); color:var(--r-ink); }
-      .rhine-theme .files-table thead { background:var(--r-ink); }
-      .rhine-theme .files-table tbody td { border-color:var(--r-line); }
-      .rhine-theme .file-type { background:var(--r-green); border:1px solid var(--r-ink); }
-      .rhine-theme .row-action { border:1px solid var(--r-ink); box-shadow:2px 2px 0 var(--r-ink); background:var(--r-white); }
-      .rhine-theme .row-action.danger { background:#f0d9d2; color:#6d261c; }
-      .rhine-theme .pager { border-top:1px solid var(--r-ink); background:#f0f2ec; }
-      .rhine-theme input { border:1px solid var(--r-ink); border-radius:0; background:var(--r-white); box-shadow:none; }
-      .rhine-theme input:focus { outline:3px solid rgba(154,196,60,.42); border-color:var(--r-ink); }
-      .rhine-theme fieldset { border:1px solid var(--r-line); }
-      .rhine-theme legend { background:var(--r-ink); color:var(--r-white); padding:5px 9px; }
-      .rhine-theme .profile-avatar { background:var(--r-green); color:var(--r-ink); border:1px solid var(--r-ink); }
-      .rhine-theme dialog { border:1px solid var(--r-ink); border-radius:0; box-shadow:14px 14px 0 rgba(17,19,15,.2); }
-      .rhine-theme dialog::backdrop { background:rgba(17,19,15,.62); }
-      .rhine-theme progress { border:1px solid var(--r-ink); }
-      .rhine-theme progress::-webkit-progress-value { background:var(--r-green); }
-      @media(max-width:960px){ .rhine-theme .app-shell{grid-template-columns:1fr}.rhine-theme .sidebar{border-right:0;border-bottom:1px solid var(--r-ink)}.rhine-theme .content{padding:20px}.rhine-theme .topbar{padding:14px 18px}.rhine-theme .content-grid{grid-template-columns:1fr} }
-    </style>
-  </head>
-  <body class="app-page rhine-theme" data-page="files">
-    <div class="app-shell">
-      <aside class="sidebar" aria-label="Application">
-        <div class="sidebar-head">
-          <a class="brand-block" href="/file/home" aria-label="Go to main page">
-            <span class="brand-mark">gC</span>
-            <div>
-              <div class="brand-title">GoCloud<br>Storage</div>
-              <div class="brand-sub">Personal cloud storage</div>
-            </div>
-          </a>
-        </div>
-
-        <div class="sidebar-user" aria-label="Current user">
-          <span class="user-avatar" data-avatar aria-hidden="true"></span>
-          <div class="user-meta">
-            <strong data-username>Account</strong>
-            <small>Signed in</small>
-          </div>
-        </div>
-
-        <ul class="sidebar-nav" aria-label="Primary">
-          <li><a class="is-active" href="/file/home">My files</a></li>
-          <li><a href="/file/upload">Upload file</a></li>
-          <li><a href="/file/account">Account</a></li>
-        </ul>
-
-        <div class="sidebar-foot">
-          <p class="sidebar-caption">Upload, download, rename, and remove files from this workspace.</p>
-          <form class="signout-form" action="/api/sessions/signout" method="post">
-            <button class="button button-secondary button-full" type="submit">Log out</button>
-          </form>
-        </div>
-      </aside>
-
-      <main class="app-main">
-        <header class="topbar">
-          <div class="topbar-title">MY FILES · FILE MANAGEMENT</div>
-          <div class="topbar-right">
-            <span class="led-indicator">Signed in</span>
-            <span id="page-status" class="status" role="status" aria-live="polite"></span>
-          </div>
-        </header>
-
-        <section class="content">
-          <div class="content-grid">
-            <div class="card panel-stack" aria-label="File list">
-              <div class="card-head">
-                <h2 id="files-title">My files</h2>
-                <button id="refresh-files" class="button button-secondary" type="button">Refresh</button>
-              </div>
-              <p id="files-status" class="status padded" role="status" aria-live="polite">Loading files…</p>
-              <div style="padding: 0 18px; overflow-x: auto;">
-                <table class="files-table">
-                  <thead>
-                    <tr>
-                      <th style="min-width: 240px;">File</th>
-                      <th style="width: 120px;">Size</th>
-                      <th style="width: 140px;">Uploaded</th>
-                      <th style="width: 140px;">Modified</th>
-                      <th style="width: 260px;">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="file-rows"></tbody>
-                </table>
-              </div>
-              <div class="pager" id="pager" hidden>
-                <button id="previous-page" class="button button-secondary" type="button">Previous</button>
-                <span id="page-label" aria-live="polite"></span>
-                <button id="next-page" class="button button-secondary" type="button">Next</button>
-              </div>
-            </div>
-
-            <aside class="surface upload-card card" id="upload-card" aria-labelledby="upload-title">
-              <div class="card-head">
-                <h3 id="upload-title">Upload a file</h3>
-              </div>
-              <form id="upload-form" action="/api/files" method="post" enctype="multipart/form-data">
-                <div class="upload-zone" id="drop-zone">
-                  <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
-                    <div style="font-family: var(--font-display); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color: var(--warmgray-500);">Drop file · or</div>
-                    <input id="upload-file" type="file" name="file" class="file-picker" aria-label="Choose a file" required>
-                    <label for="upload-file">Choose file</label>
-                    <p id="selected-file" class="field-hint"></p>
-                  </div>
-                </div>
-                <div style="padding-top: 14px; display:flex; flex-direction:column; gap:10px;">
-                  <button class="button button-primary button-full" type="submit">Upload file</button>
-                  <button id="cancel-upload" class="button button-danger button-full" type="button" hidden>Cancel upload</button>
-                  <div style="font-size:11px; color: var(--warmgray-500); font-family: var(--font-body); line-height:1.5;">
-                    Files up to 100 MiB transfer in one shot. Larger files are hashed in the browser and uploaded as resumable 5 MiB parts.
-                  </div>
-                  <progress id="upload-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
-                  <p id="upload-status" class="status" role="status" aria-live="polite"></p>
-                </div>
-              </form>
-            </aside>
-          </div>
-        </section>
-      </main>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="GoCloud — your files, in one place.">
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/assets/styles.css?v=10">
+  <title>Files — GoCloud</title>
+</head>
+<body class="app-page" data-page="files">
+<a class="skip-link" href="#main-content">Skip to content</a>
+<div class="app-shell">
+  <aside class="sidebar" id="app-sidebar" aria-label="Application">
+    <div class="sidebar-head"><a class="brand-lock" href="/file/home" aria-label="GoCloud home"><span class="brand-mark"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 8.9 4.6 4.6 0 0 0 7 18Z"/></svg></span><span class="brand-name">GoCloud</span></a><button class="button button-ghost icon-button mobile-close" type="button" data-close-sidebar aria-label="Close navigation"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+    <div class="workspace-label">Workspace</div>
+    <nav aria-label="Primary"><ul class="sidebar-nav">
+      <li><a class="is-active" aria-current="page" href="/file/home"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg><span>Files</span></a></li>
+      <li><a  href="/file/upload"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg><span>Upload</span></a></li>
+      <li><a  href="/file/account"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg><span>Account</span></a></li>
+    </ul></nav>
+    <div class="sidebar-foot">
+      <a class="sidebar-user" href="/file/account" aria-label="Manage your account"><span class="user-avatar" data-avatar aria-hidden="true"></span><span class="user-meta"><strong data-username>Account</strong><small class="profile-email">Your personal workspace</small></span></a>
+      <form class="signout-form" action="/api/sessions/signout" method="post"><button class="button button-ghost button-full" type="submit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4M9 12h12m-4-4 4 4-4 4"/></svg>Sign out</button></form>
     </div>
-
-    <dialog id="file-dialog" aria-labelledby="dialog-title">
-      <form id="file-action-form">
-        <div class="card-head">
-          <h2 id="dialog-title"></h2>
-        </div>
-        <div class="card-body">
-          <p id="dialog-description"></p>
-          <div class="field" id="rename-field">
-            <label for="rename-input">New file name</label>
-            <input id="rename-input" name="name" maxlength="255">
-          </div>
-          <p id="dialog-status" class="status" role="status"></p>
-        </div>
-        <div class="card-foot">
-          <button id="dialog-cancel" class="button button-secondary" type="button">Cancel</button>
-          <button id="dialog-submit" class="button button-primary" type="submit">Save</button>
-        </div>
-      </form>
-    </dialog>
-
-    <script src="/assets/app.js?v=3"></script>
-  </body>
+  </aside>
+  <button class="sidebar-backdrop" type="button" data-close-sidebar aria-label="Close navigation" tabindex="-1" hidden></button>
+  <main class="app-main" id="main-content">
+    <header class="topbar"><div class="breadcrumbs"><button class="button button-ghost icon-button mobile-toggle" id="sidebar-toggle" type="button" aria-label="Open navigation" aria-controls="app-sidebar" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span>Workspace</span><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg><span class="breadcrumb-current">Files</span></div><a class="topbar-account" href="/file/account"><span class="user-avatar" data-avatar aria-hidden="true"></span><span data-username>Account</span></a></header>
+    <div class="page-notice"><p id="page-status" class="status" role="status" aria-live="polite"></p></div>
+    <section class="content">
+  <div class="page-heading"><div><h1>Files</h1><p>Your files, all in one place.</p></div><button class="button button-primary" type="button" data-open-upload><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Upload file</button></div>
+  <section class="card file-browser" aria-labelledby="files-title">
+    <div class="card-head"><div class="section-label"><h2 id="files-title">All files</h2><span class="count-badge" id="file-count" hidden></span></div><button id="refresh-files" class="button button-ghost" type="button"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7a8 8 0 1 0 .4 9M20 3v5h-5"/></svg>Refresh</button></div>
+    <p id="files-status" class="status files-status" role="status" aria-live="polite">Loading files…</p>
+    <div class="table-scroll"><table class="files-table" aria-label="Your files"><thead><tr><th scope="col">Name</th><th scope="col">Size</th><th scope="col" class="uploaded-column">Uploaded</th><th scope="col" class="modified-column">Modified</th><th scope="col" class="actions-column"><span class="sr-only">Actions</span></th></tr></thead><tbody id="file-rows"></tbody></table></div>
+    <div id="files-empty" class="empty-state" hidden><span class="empty-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span><h2>No files yet</h2><p>Upload your first file to keep it here.</p><button class="button button-primary" type="button" data-open-upload><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Upload file</button></div>
+    <div class="table-footer"><span id="files-summary">20 files per page</span><div class="pager" id="pager" hidden><button id="previous-page" class="button button-secondary" type="button">Previous</button><span id="page-label" aria-live="polite"></span><button id="next-page" class="button button-secondary" type="button">Next</button></div></div>
+  </section>
+  <p class="browser-hint">Download, rename, or delete a file from its <span aria-hidden="true">···</span> actions menu.</p>
+</section>
+<dialog id="upload-dialog" aria-labelledby="upload-title"><div class="dialog-head"><div><h2 id="upload-title">Upload file</h2><p>Add a file to your workspace.</p></div><button id="close-upload" class="button button-ghost icon-button" type="button" aria-label="Close upload"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><form id="upload-form" action="/api/files" method="post" enctype="multipart/form-data">
+  <div class="upload-zone" id="drop-zone">
+    <span class="upload-icon"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg></span>
+    <label for="upload-file">Choose a file to upload</label>
+    <span class="field-hint">or drag and drop a file here</span>
+    <input id="upload-file" type="file" name="file" class="file-picker" aria-describedby="upload-help" required>
+    <p id="selected-file" class="selected-file" aria-live="polite"></p>
+  </div>
+  <div class="upload-controls">
+    <p class="upload-help" id="upload-help">Interrupted a large upload? Select the same file to continue where you left off.</p>
+    <div id="transfer-readout" class="transfer-readout" hidden><span id="upload-bytes"></span><span id="upload-percent"></span></div>
+    <progress id="upload-progress" max="100" value="0" hidden aria-label="Upload progress"></progress>
+    <p id="upload-status" class="status" role="status" aria-live="polite"></p>
+    <a id="upload-complete-link" class="text-link" href="/file/home" hidden>View files <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></a>
+    <details class="transfer-details"><summary>About resumable uploads</summary><p class="field-hint">Files up to 100 MiB upload in one request. Larger files upload in resumable parts and are verified before saving. To resume, select the same file within 24 hours of the last saved part.</p><dl id="transfer-metadata" hidden><dt>SHA-256</dt><dd id="upload-hash"></dd><dt>Parts saved</dt><dd id="upload-chunks"></dd></dl></details>
+    <div class="action-group"><button class="button button-primary" type="submit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Upload file</button><button id="cancel-upload" class="button button-danger" type="button" hidden>Cancel upload</button></div>
+  </div>
+</form></dialog>
+<dialog id="file-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+  <form id="file-action-form"><div class="dialog-head"><h2 id="dialog-title"></h2></div><div class="dialog-body"><p id="dialog-description"></p><div class="field" id="rename-field"><label for="rename-input">File name</label><input id="rename-input" name="name" maxlength="255"></div><p id="dialog-status" class="status" role="status"></p></div><div class="dialog-foot"><button id="dialog-cancel" class="button button-secondary" type="button">Cancel</button><button id="dialog-submit" class="button button-primary" type="submit">Save</button></div></form>
+</dialog>
+  </main>
+</div>
+<script src="/assets/app.js?v=10"></script>
+</body>
 </html>
