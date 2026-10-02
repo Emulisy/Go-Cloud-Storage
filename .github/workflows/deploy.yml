@@ -53,8 +53,44 @@ jobs:
           test -s .env
           docker compose config --quiet
           docker compose pull caddy mysql redis
-          docker compose run --rm --no-deps caddy \
-            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          # SSH supplies this script on stdin; validation must not consume it.
+          docker compose run --rm --no-deps -T --interactive=false caddy \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile </dev/null
           docker compose up -d --build --remove-orphans --wait --wait-timeout 120
           docker compose ps
+
+          # A healthy container can still be running an older UI image.
+          while IFS= read -r -d '' file; do
+            expected=$(sha256sum "$file" | cut -d ' ' -f 1)
+            actual=$(docker compose exec -T --interactive=false app sha256sum "/app/$file" </dev/null | cut -d ' ' -f 1)
+            if [[ "$actual" != "$expected" ]]; then
+              echo "::error::Running app has stale UI file: $file"
+              exit 1
+            fi
+          done < <(find static -type f -print0)
           REMOTE
+
+      - name: Verify public UI matches this commit
+        env:
+          APP_URL: https://emulisygocloud.southeastasia.cloudapp.azure.com
+        run: |
+          set -Eeuo pipefail
+          while read -r route file; do
+            response=$(mktemp)
+            curl --fail --silent --show-error \
+              --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 \
+              -H 'Cache-Control: no-cache' \
+              "$APP_URL$route?deploy-check=$GITHUB_SHA" -o "$response"
+            if ! cmp -s "$file" "$response"; then
+              echo "::error::Public route $route does not match commit $GITHUB_SHA. Check the deployed VM and Caddy upstream."
+              exit 1
+            fi
+            rm -f "$response"
+          done <<'FILES'
+          / static/view/landing.html
+          /file/signin static/view/login.html
+          /file/signup static/view/signup.html
+          /assets/styles.css static/assets/styles.css
+          /assets/app.js static/assets/app.js
+          /assets/favicon.svg static/assets/favicon.svg
+          FILES

@@ -104,6 +104,12 @@ The workflow in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) r
 2. Validates the Compose and Caddy configuration.
 3. Pulls service images and rebuilds the Go application.
 4. Starts the stack and waits for service health checks.
+5. Compares every UI file in the running app container with the uploaded source.
+6. Fetches the public pages and assets without cached responses and verifies they match the deployed commit.
+
+If the container check fails, the running image contains stale UI files. If only the public check fails, inspect the deployment target and Caddy upstream: healthy containers alone do not prove the public site serves the new release.
+
+The remote script arrives over SSH on standard input. Caddy validation runs with interactive input disabled and stdin redirected to `/dev/null` so it cannot consume the remaining rebuild and restart commands. A deployment log that ends at `Valid configuration` has not reached the application rebuild.
 
 ### 5. Verify deployment
 
