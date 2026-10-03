@@ -3,6 +3,7 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const bytes = value => new TextEncoder().encode(value).length;
   const pageName = document.body.dataset.page;
+  const landingPage = document.body.classList.contains("welcome-page");
   const ordinaryLimit = 100 * 1024 * 1024;
 
   // Small, shared inline icons; user content never enters SVG markup.
@@ -15,7 +16,7 @@
   };
   function makeIcon(kind) {
     const node = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", class: "icon" })) node.setAttribute(key, value);
+    for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", class: "icon" })) node.setAttribute(key, value);
     node.innerHTML = iconPaths[kind];
     return node;
   }
@@ -113,6 +114,22 @@
     return response;
   }
 
+  function setLandingNavigation(signedIn) {
+    document.querySelectorAll("[data-guest-only]").forEach(node => { node.hidden = signedIn; });
+    document.querySelectorAll("[data-user-only]").forEach(node => { node.hidden = !signedIn; });
+    $("[data-workspace-link]").href = signedIn ? "/file/home" : "/file/signup";
+    $("[data-workspace-label]").textContent = signedIn ? "Open my files" : "Create your workspace";
+  }
+
+  async function refreshLandingNavigation() {
+    setLandingNavigation(false);
+    try {
+      const user = await (await request("/api/users/me", {}, false)).json();
+      if (typeof user?.username === "string") setLandingNavigation(true);
+    } catch { /* Keep the public landing page available when signed out or offline. */ }
+  }
+  if (landingPage) refreshLandingNavigation();
+
   function validate(form) {
     for (const input of form.querySelectorAll("input")) input.setCustomValidity("");
     for (const input of form.querySelectorAll('input[name="userName"], input[type="password"]')) {
@@ -154,6 +171,7 @@
   // Revalidate pages restored from the browser's back/forward cache after sign-out.
   window.addEventListener("pageshow", event => {
     if (event.persisted && pageName) location.reload();
+    else if (event.persisted && landingPage) refreshLandingNavigation();
   });
 
   const authForm = $("#auth-form");
@@ -247,7 +265,7 @@
     });
   });
 
-  // File metadata is paged by the existing API, then searched and sorted locally.
+  // Preserve the file order returned by the existing API.
   // Totals are committed only after every page loads; partial results are never totals.
   let allFiles = null, page = 1, loading = false, selectedId = null, editingId = null;
   let pendingDelete = null, detailTrigger = null, deleteTrigger = null;
@@ -299,19 +317,6 @@
     document.querySelectorAll("[data-file-count]").forEach(node => { node.hidden = false; node.textContent = allFiles.length.toLocaleString(); });
     if ($("#workspace-summary")) $("#workspace-summary").textContent = `${count} · ${sizeLabel(size)} in your workspace`;
     if ($("#file-count")) { $("#file-count").hidden = false; $("#file-count").textContent = allFiles.length.toLocaleString(); }
-  }
-
-  function filteredFiles() {
-    const query = ($("#file-search")?.value || "").trim().toLocaleLowerCase();
-    const files = (allFiles || []).filter(file => file.fileName.toLocaleLowerCase().includes(query));
-    const sorting = $("#file-sort")?.value || "newest";
-    files.sort((a, b) => {
-      if (sorting === "name") return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }) || a.id - b.id;
-      if (sorting === "largest") return b.fileSize - a.fileSize || b.id - a.id;
-      const order = (Date.parse(a.uploadAt) || 0) - (Date.parse(b.uploadAt) || 0) || a.id - b.id;
-      return sorting === "oldest" ? order : -order;
-    });
-    return files;
   }
 
   function closeDetails(returnFocus = true) {
@@ -471,7 +476,7 @@
 
   function renderFiles(arrivingIds = new Set()) {
     if (!rows || !allFiles) return;
-    const files = filteredFiles();
+    const files = allFiles;
     const pages = Math.max(1, Math.ceil(files.length / pageSize));
     page = Math.max(1, Math.min(page, pages));
     rows.replaceChildren(); editingId = null;
@@ -501,14 +506,10 @@
       const control = document.createElement("td"), group = document.createElement("div"); group.className = "table-actions";
       group.append(buildMenu(file)); control.append(group); row.append(control); rows.append(row);
     }
-    const query = $("#file-search").value.trim();
     $("#files-empty").hidden = files.length > 0;
     $(".table-scroll").hidden = files.length === 0;
-    $("#empty-title").textContent = query ? "No matching files" : "Your files will appear here";
-    $("#empty-description").textContent = query ? `No file names match “${query}”. Try a different search.` : "Drop a file anywhere in this workspace, or choose one from your computer.";
-    $('#files-empty [data-open-upload]').hidden = Boolean(query);
     const start = (page - 1) * pageSize + 1, end = Math.min(page * pageSize, files.length);
-    $("#files-summary").textContent = files.length ? `${start}–${end} of ${files.length.toLocaleString()} ${query ? "matching " : ""}files` : query ? "No results" : "No files stored yet";
+    $("#files-summary").textContent = files.length ? `${start}–${end} of ${files.length.toLocaleString()} ${files.length === 1 ? "file" : "files"}` : "No files stored yet";
     $("#pager").hidden = pages === 1;
     $("#page-label").textContent = `${page} / ${pages}`;
     $("#previous-page").disabled = page === 1; $("#next-page").disabled = page === pages;
@@ -566,8 +567,6 @@
     $("#previous-page").addEventListener("click", () => { page--; renderFiles(); });
     $("#next-page").addEventListener("click", () => { page++; renderFiles(); });
     $("#refresh-files").addEventListener("click", () => loadFiles());
-    $("#file-search").addEventListener("input", () => { page = 1; renderFiles(); });
-    $("#file-sort").addEventListener("change", () => { page = 1; renderFiles(); });
     $("#close-details").addEventListener("click", () => closeDetails());
     $("#detail-rename").addEventListener("click", () => {
       const file = allFiles.find(item => item.id === selectedId);
@@ -579,7 +578,6 @@
     });
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && !detailPanel.hidden && !dialog.open && editingId === null) closeDetails();
-      if ((event.ctrlKey || event.metaKey) && event.key === "k") { event.preventDefault(); $("#file-search").focus(); }
     });
   }
   if (pageName) loadFiles();
@@ -792,7 +790,6 @@
       $("#upload-status").classList.add("is-success"); $("#upload-complete-link").hidden = false;
       selectedFile = null; hashForFile = null; uploadForm.reset(); submitUpload.textContent = "Upload file";
       toast(reused ? `“${file.name}” is ready instantly.` : `“${file.name}” has arrived.`);
-      if (rows) { $("#file-search").value = ""; $("#file-sort").value = "newest"; }
       // A failed list refresh must never turn a completed transfer into an error.
       await loadFiles(true, true);
     } catch (error) {
