@@ -139,7 +139,12 @@ func SignOutHandler(
         SameSite: http.SameSiteLaxMode,
     })
 
-    // 3. Return success.
+	// 3. Update the user's last active timestamp in the database.
+	if err := db.UpdateUserLastActive(r.Context().Value("userID").(int64)); err != nil {
+		log.Printf("Update user last active: %v", err)
+	}
+
+    // 4. Return success.
     w.WriteHeader(http.StatusNoContent)
 }
 

@@ -26,6 +26,21 @@ A full-stack cloud storage application built with Go, MySQL, Redis, and Cloudfla
 | Infrastructure | Docker Compose, Caddy, Ubuntu, Azure VM |
 | Delivery | GitHub Actions, SSH, rsync |
 
+## Frontend structure
+
+The browser uses native JavaScript modules without a build step. Every page loads `static/assets/app.js`, which initializes the page features.
+
+- `static/assets/views/` handles rendering, formatting, validation, and local UI interactions. It performs no network requests.
+- `static/assets/requests/` sends HTTP requests, reads and validates responses, and handles ordinary and multipart transfers. It has no DOM dependencies.
+- `static/assets/controllers/` connects user actions and request results to the views for authentication, account settings, files, and uploads.
+- `static/assets/config.js` shares the upload limit and download route helper.
+
+Run the request regression checks with Node.js 22 or later:
+
+```sh
+node --experimental-default-type=module --test tests/frontend.test.mjs
+```
+
 ## Deploy to an Ubuntu Azure VM
 
 ### 1. Prepare Azure and external services

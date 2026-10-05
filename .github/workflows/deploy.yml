@@ -92,5 +92,21 @@ jobs:
           /file/signup static/view/signup.html
           /assets/styles.css static/assets/styles.css
           /assets/app.js static/assets/app.js
+          /assets/config.js static/assets/config.js
+          /assets/controllers/account.js static/assets/controllers/account.js
+          /assets/controllers/auth.js static/assets/controllers/auth.js
+          /assets/controllers/files.js static/assets/controllers/files.js
+          /assets/controllers/session.js static/assets/controllers/session.js
+          /assets/controllers/upload.js static/assets/controllers/upload.js
+          /assets/requests/files.js static/assets/requests/files.js
+          /assets/requests/http.js static/assets/requests/http.js
+          /assets/requests/uploads.js static/assets/requests/uploads.js
+          /assets/requests/users.js static/assets/requests/users.js
+          /assets/views/files.js static/assets/views/files.js
+          /assets/views/forms.js static/assets/views/forms.js
+          /assets/views/navigation.js static/assets/views/navigation.js
+          /assets/views/shared.js static/assets/views/shared.js
+          /assets/views/upload.js static/assets/views/upload.js
+          /assets/views/user.js static/assets/views/user.js
           /assets/favicon.svg static/assets/favicon.svg
           FILES

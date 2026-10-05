@@ -199,6 +199,16 @@ func UpdateUserEmail(userID int64, email string) error {
 	})
 }
 
+
+//update the user last active tag
+func UpdateUserLastActive(userID int64) error {
+	return updateActiveUser(userID, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE tbl_user SET last_active = NOW() WHERE id = ?`, userID)
+		return err
+	})
+}
+
+
 // updateActiveUser locks the account so concurrent changes cannot bypass validation.
 // Checking existence separately also allows unchanged values to succeed.
 func updateActiveUser(userID int64, update func(*sql.Tx) error) error {
