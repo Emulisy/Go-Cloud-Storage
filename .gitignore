@@ -1,1 +1,23 @@
+# Local environment files and credentials.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editor and operating-system files.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated binaries, temporary files, and reports.
+/gocloudstorage
+bin/
+dist/
+tmp/
+coverage/
+*.exe
+*.test
+*.out
+*.log

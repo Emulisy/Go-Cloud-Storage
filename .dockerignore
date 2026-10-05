@@ -5,6 +5,8 @@
 **/.env.*
 *.pem
 *.key
+**/*.pem
+**/*.key
 
 # Version control and editor files.
 .git
@@ -27,4 +29,7 @@ coverage/
 compose*.yaml
 compose*.yml
 Readme.md
+architecture.md
 doc/
+deploy/
+tests/
