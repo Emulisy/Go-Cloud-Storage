@@ -103,7 +103,7 @@ services:
   minio:
     image: ${MINIO_IMAGE:-quay.io/minio/aistor/minio@sha256:107cf2014a9583c74c11e3cdbd6903d89c2244355886b89ce532f4ecae9c23f3}
     profiles: [minio]
-    command: ["server", "/data", "--license", "/etc/minio/minio.license", "--certs-dir", "/etc/minio/certs"]
+    command: ["server", "/data", "--license", "/etc/minio/minio.license"]
     environment:
       MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
@@ -115,18 +115,6 @@ services:
       - type: bind
         source: ${MINIO_CONFIG_DIR:-/etc/gocloudstorage/minio}/minio.license
         target: /etc/minio/minio.license
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${MINIO_CONFIG_DIR:-/etc/gocloudstorage/minio}/certs/public.crt
-        target: /etc/minio/certs/public.crt
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${MINIO_CONFIG_DIR:-/etc/gocloudstorage/minio}/certs/private.key
-        target: /etc/minio/certs/private.key
         read_only: true
         bind:
           create_host_path: false
