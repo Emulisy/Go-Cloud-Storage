@@ -13,8 +13,7 @@ CREATE TABLE IF NOT EXISTS tbl_file (
         COMMENT 'File status: 0=inactive, 1=active',
 
     PRIMARY KEY (id),
-    UNIQUE KEY idx_file_sha (file_sha),
-    KEY idx_status (status)
+    UNIQUE KEY idx_file_sha (file_sha)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   COMMENT='Shared stored file content';
 
@@ -45,8 +44,7 @@ CREATE TABLE IF NOT EXISTS tbl_user (
         COMMENT 'User status: 0=active, 1=disabled',
 
     PRIMARY KEY (id),
-    UNIQUE KEY idx_email (email),
-    KEY idx_status (status)
+    UNIQUE KEY idx_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   COMMENT='Application user accounts';
 
@@ -78,11 +76,9 @@ CREATE TABLE IF NOT EXISTS `tbl_user_file` (
 
     PRIMARY KEY (`id`),
 
-    KEY `idx_user_id` (`user_id`),
+    KEY `idx_user_file_list` (`user_id`, `status`, `upload_at`, `id`),
 
     KEY `idx_file_sha256` (`file_sha256`),
-
-    KEY `idx_status` (`status`),
 
     CONSTRAINT `fk_user_file_owner`
         FOREIGN KEY (`user_id`)

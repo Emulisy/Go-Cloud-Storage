@@ -21,10 +21,16 @@ import (
 	"github.com/aws/smithy-go"
 )
 
-type R2Store struct {
-	client *s3.Client
-	bucket string
+type S3Store struct {
+	client        *s3.Client
+	bucket        string
+	addressPrefix string
 }
+
+const (
+	r2AddressPrefix    = "r2://"
+	minioAddressPrefix = "s3://"
+)
 
 type Object struct {
 	Body        io.ReadCloser
@@ -33,7 +39,7 @@ type Object struct {
 	ETag        string
 }
 
-// MultipartPart describes an uploaded part. Preserve ETag exactly as returned by R2.
+// MultipartPart describes an uploaded part. Preserve ETag exactly as returned by S3.
 // PartNumber is one-based; handlers using zero-based chunk indices must add one.
 type MultipartPart struct {
 	PartNumber int32  `json:"partNumber"`
@@ -42,22 +48,34 @@ type MultipartPart struct {
 }
 
 var (
-	ErrR2NotInitialized = errors.New("R2 is not initialized")
-	ErrObjectNotFound   = errors.New("R2 object not found")
-	r2Store             *R2Store
-	r2Mu                sync.RWMutex
+	ErrNotInitialized = errors.New("S3 is not initialized")
+	ErrObjectNotFound = errors.New("S3 object not found")
+	store             *S3Store
+	storeMu           sync.RWMutex
 )
 
-// InitR2 loads configuration without contacting the bucket. Call it at startup.
-func InitR2() error {
-	accessKey := os.Getenv("R2_ACCESS_KEY_ID")
-	secretKey := os.Getenv("R2_SECRET_ACCESS_KEY")
-	endpoint := os.Getenv("R2_ENDPOINT")
-	bucket := os.Getenv("R2_BUCKET")
-	region := os.Getenv("R2_REGION")
+// Init loads configuration without contacting the bucket. Call it at startup.
+func Init() error {
+	var envPrefix, addressPrefix, defaultRegion, schemes string
+	backend := os.Getenv("STORAGE_BACKEND")
+	minio := backend == "minio"
+	switch backend {
+	case "", "r2":
+		envPrefix, addressPrefix, defaultRegion, schemes = "R2_", r2AddressPrefix, "auto", "an HTTPS"
+	case "minio":
+		envPrefix, addressPrefix, defaultRegion, schemes = "MINIO_", minioAddressPrefix, "us-east-1", "an HTTP or HTTPS"
+	default:
+		return errors.New("STORAGE_BACKEND must be r2 or minio")
+	}
+
+	accessKey := os.Getenv(envPrefix + "ACCESS_KEY_ID")
+	secretKey := os.Getenv(envPrefix + "SECRET_ACCESS_KEY")
+	endpoint := os.Getenv(envPrefix + "ENDPOINT")
+	bucket := os.Getenv(envPrefix + "BUCKET")
+	region := os.Getenv(envPrefix + "REGION")
 
 	if region == "" {
-		region = "auto"
+		region = defaultRegion
 	}
 
 	if accessKey == "" ||
@@ -65,13 +83,17 @@ func InitR2() error {
 		endpoint == "" ||
 		bucket == "" {
 
-		return fmt.Errorf("R2 configuration is incomplete")
+		return fmt.Errorf("%s configuration is incomplete", strings.TrimSuffix(envPrefix, "_"))
+	}
+	if minio && !strings.Contains(endpoint, "://") {
+		endpoint = "http://" + endpoint
 	}
 	endpointURL, err := url.Parse(endpoint)
-	if err != nil || endpointURL.Scheme != "https" || endpointURL.Hostname() == "" ||
+	if err != nil || (endpointURL.Scheme != "https" && !(minio && endpointURL.Scheme == "http")) ||
+		endpointURL.Hostname() == "" ||
 		endpointURL.User != nil || endpointURL.RawQuery != "" || endpointURL.ForceQuery ||
 		endpointURL.Fragment != "" || (endpointURL.Path != "" && endpointURL.Path != "/") {
-		return fmt.Errorf("R2_ENDPOINT must be an HTTPS service URL without a bucket path, credentials, query, or fragment")
+		return fmt.Errorf("%sENDPOINT must be %s service endpoint without a bucket path, credentials, query, or fragment", envPrefix, schemes)
 	}
 
 	cfg, err := config.LoadDefaultConfig(
@@ -86,45 +108,64 @@ func InitR2() error {
 		),
 	)
 	if err != nil {
-		return fmt.Errorf("load R2 config: %w", err)
+		return fmt.Errorf("load S3 config: %w", err)
 	}
 
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(endpoint)
 		o.UsePathStyle = true
-		// Avoid optional AWS checksum trailers for R2 compatibility.
+		// Avoid optional AWS checksum trailers for S3 compatibility.
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 
-	r2Mu.Lock()
-	r2Store = &R2Store{
-		client: client,
-		bucket: bucket,
+	storeMu.Lock()
+	store = &S3Store{
+		client:        client,
+		bucket:        bucket,
+		addressPrefix: addressPrefix,
 	}
-	r2Mu.Unlock()
+	storeMu.Unlock()
 
 	return nil
 }
 
-func R2() *R2Store {
-	r2Mu.RLock()
-	defer r2Mu.RUnlock()
-	return r2Store
+func Store() *S3Store {
+	storeMu.RLock()
+	defer storeMu.RUnlock()
+	return store
 }
 
-func (s *R2Store) validate(ctx context.Context, key string) error {
+// Address returns the location stored in MySQL for an object in the active bucket.
+func (s *S3Store) Address(key string) string {
+	return s.addressPrefix + key
+}
+
+// ObjectKey resolves a remote address or identifies a legacy filesystem path.
+func (s *S3Store) ObjectKey(address string) (key string, remote bool, err error) {
+	if s != nil {
+		if key, ok := strings.CutPrefix(address, s.addressPrefix); ok {
+			return key, true, nil
+		}
+	}
+	if strings.HasPrefix(address, r2AddressPrefix) || strings.HasPrefix(address, minioAddressPrefix) {
+		return "", true, errors.New("stored object belongs to a different storage backend")
+	}
+	return "", false, nil
+}
+
+func (s *S3Store) validate(ctx context.Context, key string) error {
 	if s == nil || s.client == nil || s.bucket == "" {
-		return ErrR2NotInitialized
+		return ErrNotInitialized
 	}
 	if ctx == nil {
-		return errors.New("R2 context must not be nil")
+		return errors.New("S3 context must not be nil")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if key == "" || len(key) > 1024 || !utf8.ValidString(key) {
-		return errors.New("R2 object key must contain 1 to 1024 valid UTF-8 bytes")
+		return errors.New("S3 object key must contain 1 to 1024 valid UTF-8 bytes")
 	}
 	return nil
 }
@@ -132,12 +173,12 @@ func (s *R2Store) validate(ctx context.Context, key string) error {
 // PutObject uploads a known-length stream without buffering it in memory.
 // The caller owns body and must close it. A seekable body allows SDK retries.
 // Existing content at key is overwritten; callers must authorize that operation.
-func (s *R2Store) PutObject(ctx context.Context, key string, body io.Reader, size int64, contentType string) error {
+func (s *S3Store) PutObject(ctx context.Context, key string, body io.Reader, size int64, contentType string) error {
 	if err := s.validate(ctx, key); err != nil {
 		return err
 	}
 	if body == nil || size < 0 {
-		return errors.New("R2 upload requires a body and a nonnegative size")
+		return errors.New("S3 upload requires a body and a nonnegative size")
 	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -145,20 +186,20 @@ func (s *R2Store) PutObject(ctx context.Context, key string, body io.Reader, siz
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: body,
 		ContentLength: aws.Int64(size), ContentType: aws.String(contentType),
-	}, unsignedR2Payload)
+	}, unsignedPayload)
 	if err != nil {
-		return fmt.Errorf("put R2 object %q: %w", key, err)
+		return fmt.Errorf("put S3 object %q: %w", key, err)
 	}
 	return nil
 }
 
-// unsignedR2Payload supports non-seekable streams over the HTTPS R2 endpoint.
-func unsignedR2Payload(o *s3.Options) {
+// unsignedPayload lets the S3 client stream non-seekable uploads.
+func unsignedPayload(o *s3.Options) {
 	o.APIOptions = append(o.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
 }
 
 // GetObject returns a streaming download. The caller must close Object.Body.
-func (s *R2Store) GetObject(ctx context.Context, key string) (*Object, error) {
+func (s *S3Store) GetObject(ctx context.Context, key string) (*Object, error) {
 	if err := s.validate(ctx, key); err != nil {
 		return nil, err
 	}
@@ -173,7 +214,7 @@ func (s *R2Store) GetObject(ctx context.Context, key string) (*Object, error) {
 }
 
 // HeadObject retrieves metadata without downloading content; Body is nil.
-func (s *R2Store) HeadObject(ctx context.Context, key string) (*Object, error) {
+func (s *S3Store) HeadObject(ctx context.Context, key string) (*Object, error) {
 	if err := s.validate(ctx, key); err != nil {
 		return nil, err
 	}
@@ -188,7 +229,7 @@ func (s *R2Store) HeadObject(ctx context.Context, key string) (*Object, error) {
 }
 
 // ObjectExists only treats missing objects as absent; permission/network errors survive.
-func (s *R2Store) ObjectExists(ctx context.Context, key string) (bool, error) {
+func (s *S3Store) ObjectExists(ctx context.Context, key string) (bool, error) {
 	_, err := s.HeadObject(ctx, key)
 	if errors.Is(err, ErrObjectNotFound) {
 		return false, nil
@@ -204,12 +245,12 @@ func objectError(operation, key string, err error) error {
 			err = errors.Join(ErrObjectNotFound, err)
 		}
 	}
-	return fmt.Errorf("%s R2 object %q: %w", operation, key, err)
+	return fmt.Errorf("%s S3 object %q: %w", operation, key, err)
 }
 
 // DeleteObject is idempotent for missing keys. Only delete shared content after
 // the database confirms that no user references it.
-func (s *R2Store) DeleteObject(ctx context.Context, key string) error {
+func (s *S3Store) DeleteObject(ctx context.Context, key string) error {
 	if err := s.validate(ctx, key); err != nil {
 		return err
 	}
@@ -217,14 +258,14 @@ func (s *R2Store) DeleteObject(ctx context.Context, key string) error {
 		Bucket: aws.String(s.bucket), Key: aws.String(key),
 	})
 	if err != nil {
-		return fmt.Errorf("delete R2 object %q: %w", key, err)
+		return fmt.Errorf("delete S3 object %q: %w", key, err)
 	}
 	return nil
 }
 
-// CreateMultipartUpload returns the R2 upload ID to persist with the user's session.
+// CreateMultipartUpload returns the S3 upload ID to persist with the user's session.
 // Call AbortMultipartUpload when abandoning a session to release uploaded parts.
-func (s *R2Store) CreateMultipartUpload(ctx context.Context, key, contentType string) (string, error) {
+func (s *S3Store) CreateMultipartUpload(ctx context.Context, key, contentType string) (string, error) {
 	if err := s.validate(ctx, key); err != nil {
 		return "", err
 	}
@@ -235,20 +276,20 @@ func (s *R2Store) CreateMultipartUpload(ctx context.Context, key, contentType st
 		Bucket: aws.String(s.bucket), Key: aws.String(key), ContentType: aws.String(contentType),
 	})
 	if err != nil {
-		return "", fmt.Errorf("create R2 multipart upload %q: %w", key, err)
+		return "", fmt.Errorf("create S3 multipart upload %q: %w", key, err)
 	}
 	if aws.ToString(out.UploadId) == "" {
-		return "", errors.New("R2 returned an empty multipart upload ID")
+		return "", errors.New("S3 returned an empty multipart upload ID")
 	}
 	return *out.UploadId, nil
 }
 
-func (s *R2Store) validateUpload(ctx context.Context, key, uploadID string) error {
+func (s *S3Store) validateUpload(ctx context.Context, key, uploadID string) error {
 	if err := s.validate(ctx, key); err != nil {
 		return err
 	}
 	if strings.TrimSpace(uploadID) == "" {
-		return errors.New("R2 multipart upload ID must not be empty")
+		return errors.New("S3 multipart upload ID must not be empty")
 	}
 	return nil
 }
@@ -256,28 +297,28 @@ func (s *R2Store) validateUpload(ctx context.Context, key, uploadID string) erro
 // UploadPart uploads a one-based part and returns its completion token.
 // All nonfinal parts must have the same size (at least 5 MiB); the final part
 // may be smaller. The caller owns body and must persist the returned ETag.
-func (s *R2Store) UploadPart(ctx context.Context, key, uploadID string, partNumber int32, body io.Reader, size int64) (*MultipartPart, error) {
+func (s *S3Store) UploadPart(ctx context.Context, key, uploadID string, partNumber int32, body io.Reader, size int64) (*MultipartPart, error) {
 	if err := s.validateUpload(ctx, key, uploadID); err != nil {
 		return nil, err
 	}
 	if partNumber < 1 || partNumber > 10000 || body == nil || size <= 0 || size > 5*1024*1024*1024 {
-		return nil, errors.New("R2 part requires a number from 1 to 10000, a body, and a size from 1 byte to 5 GiB")
+		return nil, errors.New("S3 part requires a number from 1 to 10000, a body, and a size from 1 byte to 5 GiB")
 	}
 	out, err := s.client.UploadPart(ctx, &s3.UploadPartInput{
 		Bucket: aws.String(s.bucket), Key: aws.String(key), UploadId: aws.String(uploadID),
 		PartNumber: aws.Int32(partNumber), Body: body, ContentLength: aws.Int64(size),
-	}, unsignedR2Payload)
+	}, unsignedPayload)
 	if err != nil {
-		return nil, fmt.Errorf("upload R2 part %d for %q: %w", partNumber, key, err)
+		return nil, fmt.Errorf("upload S3 part %d for %q: %w", partNumber, key, err)
 	}
 	if aws.ToString(out.ETag) == "" {
-		return nil, errors.New("R2 returned an empty part ETag")
+		return nil, errors.New("S3 returned an empty part ETag")
 	}
 	return &MultipartPart{PartNumber: partNumber, ETag: *out.ETag, Size: size}, nil
 }
 
 // ListParts retrieves every page of uploaded parts for resumable upload status.
-func (s *R2Store) ListParts(ctx context.Context, key, uploadID string) ([]MultipartPart, error) {
+func (s *S3Store) ListParts(ctx context.Context, key, uploadID string) ([]MultipartPart, error) {
 	if err := s.validateUpload(ctx, key, uploadID); err != nil {
 		return nil, err
 	}
@@ -288,7 +329,7 @@ func (s *R2Store) ListParts(ctx context.Context, key, uploadID string) ([]Multip
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("list R2 parts for %q: %w", key, err)
+			return nil, fmt.Errorf("list S3 parts for %q: %w", key, err)
 		}
 		for _, part := range page.Parts {
 			parts = append(parts, MultipartPart{PartNumber: aws.ToInt32(part.PartNumber),
@@ -302,12 +343,12 @@ func (s *R2Store) ListParts(ctx context.Context, key, uploadID string) ([]Multip
 // Callers must verify the expected part count, total size, and content integrity
 // before completion. An ETag is not the application's SHA-256 file hash.
 // On error the session remains available for inspection, retry, or explicit abort.
-func (s *R2Store) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []MultipartPart) error {
+func (s *S3Store) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []MultipartPart) error {
 	if err := s.validateUpload(ctx, key, uploadID); err != nil {
 		return err
 	}
 	if len(parts) == 0 || len(parts) > 10000 {
-		return errors.New("R2 multipart completion requires 1 to 10000 parts")
+		return errors.New("S3 multipart completion requires 1 to 10000 parts")
 	}
 	ordered := append([]MultipartPart(nil), parts...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].PartNumber < ordered[j].PartNumber })
@@ -315,7 +356,7 @@ func (s *R2Store) CompleteMultipartUpload(ctx context.Context, key, uploadID str
 	for i, part := range ordered {
 		if part.PartNumber < 1 || part.PartNumber > 10000 || strings.TrimSpace(part.ETag) == "" ||
 			(i > 0 && ordered[i-1].PartNumber == part.PartNumber) {
-			return errors.New("R2 completion requires unique part numbers from 1 to 10000 and nonempty ETags")
+			return errors.New("S3 completion requires unique part numbers from 1 to 10000 and nonempty ETags")
 		}
 		completed[i] = types.CompletedPart{PartNumber: aws.Int32(part.PartNumber), ETag: aws.String(part.ETag)}
 	}
@@ -324,13 +365,13 @@ func (s *R2Store) CompleteMultipartUpload(ctx context.Context, key, uploadID str
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: completed},
 	})
 	if err != nil {
-		return fmt.Errorf("complete R2 multipart upload %q: %w", key, err)
+		return fmt.Errorf("complete S3 multipart upload %q: %w", key, err)
 	}
 	return nil
 }
 
 // AbortMultipartUpload discards uploaded parts. An already absent upload is a success.
-func (s *R2Store) AbortMultipartUpload(ctx context.Context, key, uploadID string) error {
+func (s *S3Store) AbortMultipartUpload(ctx context.Context, key, uploadID string) error {
 	if err := s.validateUpload(ctx, key, uploadID); err != nil {
 		return err
 	}
@@ -342,7 +383,7 @@ func (s *R2Store) AbortMultipartUpload(ctx context.Context, key, uploadID string
 		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchUpload" {
 			return nil
 		}
-		return fmt.Errorf("abort R2 multipart upload %q: %w", key, err)
+		return fmt.Errorf("abort S3 multipart upload %q: %w", key, err)
 	}
 	return nil
 }

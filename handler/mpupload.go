@@ -112,7 +112,7 @@ func InitialMPUploadHandler(
 		}
 
 		if existingSession["r2_upload_id"] == "" || existingSession["object_key"] == "" {
-			http.Error(w, "Legacy upload session cannot be resumed in R2", http.StatusConflict)
+			http.Error(w, "Legacy upload session cannot be resumed in S3", http.StatusConflict)
 			return
 		}
 
@@ -203,9 +203,9 @@ func InitialMPUploadHandler(
 	}
 
 	objectKey := "objects/" + fileHash + "/" + rand.Text()
-	r2UploadID, err := storage.R2().CreateMultipartUpload(r.Context(), objectKey, "application/octet-stream")
+	uploadID, err := storage.Store().CreateMultipartUpload(r.Context(), objectKey, "application/octet-stream")
 	if err != nil {
-		log.Printf("Create R2 multipart upload: %v", err)
+		log.Printf("Create S3 multipart upload: %v", err)
 		http.Error(w, "Unable to create multipart upload", http.StatusInternalServerError)
 		return
 	}
@@ -224,7 +224,7 @@ func InitialMPUploadHandler(
 	_, err = redisClient.TxPipelined(
 		r.Context(),
 		func(pipe redis.Pipeliner) error {
-			// A new R2 upload must not reuse stale part ETags.
+			// A new S3 upload must not reuse stale part ETags.
 			pipe.Del(r.Context(), "mpupload:chunks:userid:"+strconv.FormatInt(user.UserID, 10)+":"+fileHash)
 			pipe.HSet(r.Context(), sessionKey, map[string]any{
 				"user_id":      strconv.FormatInt(user.UserID, 10),
@@ -232,7 +232,7 @@ func InitialMPUploadHandler(
 				"file_size":    info.FileSize,
 				"file_name":    info.FileName,
 				"upload_id":    info.UploadID,
-				"r2_upload_id": r2UploadID,
+				"r2_upload_id": uploadID,
 				"object_key":   objectKey,
 				"chunk_size":   info.ChunkSize,
 				"chunk_count":  info.ChunkCount,
@@ -249,8 +249,8 @@ func InitialMPUploadHandler(
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 		defer cancel()
-		if abortErr := storage.R2().AbortMultipartUpload(cleanupCtx, objectKey, r2UploadID); abortErr != nil {
-			log.Printf("Abort unsaved R2 multipart upload %q: %v", objectKey, abortErr)
+		if abortErr := storage.Store().AbortMultipartUpload(cleanupCtx, objectKey, uploadID); abortErr != nil {
+			log.Printf("Abort unsaved S3 multipart upload %q: %v", objectKey, abortErr)
 		}
 		http.Error(w, "Unable to save upload information", http.StatusInternalServerError)
 		return
@@ -344,9 +344,9 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		expected = size - index*chunkSize
 	}
 
-	// 3. Stream the chunk to R2; public chunk indices remain zero-based.
+	// 3. Stream the chunk to S3; public chunk indices remain zero-based.
 	if info["r2_upload_id"] == "" || info["object_key"] == "" {
-		http.Error(w, "Upload session has no R2 upload", http.StatusConflict)
+		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
 	if r.ContentLength >= 0 && r.ContentLength != expected {
@@ -354,9 +354,9 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 	body := &io.LimitedReader{R: r.Body, N: expected + 1}
-	part, err := storage.R2().UploadPart(r.Context(), info["object_key"], info["r2_upload_id"], int32(index+1), body, expected)
+	part, err := storage.Store().UploadPart(r.Context(), info["object_key"], info["r2_upload_id"], int32(index+1), body, expected)
 	if err != nil {
-		log.Printf("Upload R2 part %d: %v", index+1, err)
+		log.Printf("Upload S3 part %d: %v", index+1, err)
 		http.Error(w, "Unable to upload chunk", http.StatusInternalServerError)
 		return
 	}
@@ -413,7 +413,7 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	})
 }
 
-// UploadCompleteHandler asks R2 to assemble the uploaded parts.
+// UploadCompleteHandler asks S3 to assemble the uploaded parts.
 func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
@@ -459,7 +459,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 		return
 	}
 	if info["r2_upload_id"] == "" || info["object_key"] == "" {
-		http.Error(w, "Upload session has no R2 upload", http.StatusConflict)
+		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
 	totalCount, countErr := strconv.ParseInt(info["chunk_count"], 10, 64)
@@ -485,7 +485,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 		return
 	}
 
-	// 3. Build the ordered list of R2 part numbers and ETags.
+	// 3. Build the ordered list of S3 part numbers and ETags.
 	parts := make([]storage.MultipartPart, 0, totalCount)
 	for i := int64(0); i < totalCount; i++ {
 		chunkIndex := strconv.FormatInt(i, 10)
@@ -497,12 +497,13 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 		parts = append(parts, storage.MultipartPart{PartNumber: int32(i + 1), ETag: etag})
 	}
 
-	// 4. R2 assembles the object. Stream it back only to preserve SHA-256
+	// 4. S3 assembles the object. Stream it back only to preserve SHA-256
 	// verification before shared content is recorded in MySQL; no local files.
-	completeErr := storage.R2().CompleteMultipartUpload(ctx, info["object_key"], info["r2_upload_id"], parts)
-	object, err := storage.R2().GetObject(ctx, info["object_key"])
+	store := storage.Store()
+	completeErr := store.CompleteMultipartUpload(ctx, info["object_key"], info["r2_upload_id"], parts)
+	object, err := store.GetObject(ctx, info["object_key"])
 	if err != nil {
-		log.Printf("Complete/read R2 multipart upload: complete=%v, get=%v", completeErr, err)
+		log.Printf("Complete/read S3 multipart upload: complete=%v, get=%v", completeErr, err)
 		http.Error(w, "Failed to complete or verify upload", http.StatusInternalServerError)
 		return
 	}
@@ -510,13 +511,13 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	verifiedHash, hashErr := util.CalculateSHA256(object.Body)
 	closeErr := object.Body.Close()
 	if hashErr != nil || closeErr != nil {
-		log.Printf("Verify R2 multipart object: read=%v, close=%v", hashErr, closeErr)
+		log.Printf("Verify S3 multipart object: read=%v, close=%v", hashErr, closeErr)
 		http.Error(w, "Failed to verify uploaded file", http.StatusInternalServerError)
 		return
 	}
 	if object.Size != expectedSize || verifiedHash != fileHash {
-		if err := removeStoredFile(ctx, "r2://"+info["object_key"]); err != nil {
-			log.Printf("Remove invalid R2 object: %v", err)
+		if err := removeStoredFile(ctx, store.Address(info["object_key"])); err != nil {
+			log.Printf("Remove invalid S3 object: %v", err)
 		}
 		if err := redisClient.Del(ctx, sessionKey, chunkKey).Err(); err != nil {
 			log.Printf("Remove invalid multipart upload state: %v", err)
@@ -528,7 +529,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	//5. update the mysql upon successful upload
 	storedFile := db.StoredFile{}
 
-	storedFile.Addr = "r2://" + info["object_key"]
+	storedFile.Addr = store.Address(info["object_key"])
 	storedFile.Hash = verifiedHash
 	storedFile.Size = object.Size
 
@@ -548,15 +549,15 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 		// A retried completion may already have committed this exact object.
 		shared, err := db.GetStoredFile(storedFile.Hash)
 		if err != nil {
-			log.Printf("Check redundant R2 object %q: %v", storedFile.Addr, err)
+			log.Printf("Check redundant S3 object %q: %v", storedFile.Addr, err)
 		} else if shared.Addr != storedFile.Addr {
 			if err := removeStoredFile(ctx, storedFile.Addr); err != nil {
-				log.Printf("Remove redundant R2 object %q: %v", storedFile.Addr, err)
+				log.Printf("Remove redundant S3 object %q: %v", storedFile.Addr, err)
 			}
 		}
 	}
 
-	// Retire the upload; chunk bytes were stored only in R2.
+	// Retire the upload; chunk bytes were stored only in S3.
 	if err := redisClient.Del(ctx, sessionKey, chunkKey).Err(); err != nil {
 		log.Printf("Remove multipart upload state: %v", err)
 	}
@@ -571,7 +572,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	}
 }
 
-// UploadCancelHandler aborts an active R2 multipart upload and removes its
+// UploadCancelHandler aborts an active S3 multipart upload and removes its
 // resumable upload state.
 func UploadCancelHandler(
 	w http.ResponseWriter,
@@ -618,7 +619,7 @@ func UploadCancelHandler(
 		return
 	}
 	if info["r2_upload_id"] == "" || info["object_key"] == "" {
-		http.Error(w, "Upload session has no R2 upload", http.StatusConflict)
+		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
 
@@ -626,8 +627,8 @@ func UploadCancelHandler(
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 	defer cancel()
 
-	if err := storage.R2().AbortMultipartUpload(ctx, info["object_key"], info["r2_upload_id"]); err != nil {
-		log.Printf("Abort R2 multipart upload: %v", err)
+	if err := storage.Store().AbortMultipartUpload(ctx, info["object_key"], info["r2_upload_id"]); err != nil {
+		log.Printf("Abort S3 multipart upload: %v", err)
 		http.Error(w, "Unable to cancel upload", http.StatusInternalServerError)
 		return
 	}
@@ -707,7 +708,7 @@ func UploadStatusHandler(
 	}
 
 	if info["r2_upload_id"] == "" || info["object_key"] == "" {
-		http.Error(w, "Upload session has no R2 upload", http.StatusConflict)
+		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
 

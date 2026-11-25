@@ -43,6 +43,21 @@ node --experimental-default-type=module --test tests/frontend.test.mjs
 
 ## Deploy to an Ubuntu Azure VM
 
+### Configure a MinIO-backed app
+
+The app defaults to R2. To use the MinIO service over the Compose network, give the app credentials scoped to its bucket and set these values in its environment file.
+
+```dotenv
+STORAGE_BACKEND=minio
+MINIO_ENDPOINT=http://minio:9000
+MINIO_BUCKET=cloud-storage
+MINIO_ACCESS_KEY_ID=replace-with-bucket-access-key
+MINIO_SECRET_ACCESS_KEY=replace-with-bucket-secret-key
+MINIO_REGION=us-east-1
+```
+
+Start the MinIO service with `docker compose up -d minio` before starting the MinIO-backed app. Test with `gocloudstorage-test` and isolated MySQL and Redis first. For a fresh production cutover, use an empty production bucket, new MySQL and Redis volumes, and a new `JWT_SECRET` so cookies from the old database cannot authenticate new accounts.
+
 ### 1. Prepare Azure and external services
 
 Create or configure:
@@ -119,8 +134,9 @@ The workflow in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) r
 2. Validates the Compose and Caddy configuration.
 3. Pulls service images and rebuilds the Go application.
 4. Starts the stack and waits for service health checks.
-5. Compares every UI file in the running app container with the uploaded source.
-6. Fetches the public pages and assets without cached responses and verifies they match the deployed commit.
+5. Applies the MySQL file-list index migration to the database volume.
+6. Compares every UI file in the running app container with the uploaded source.
+7. Fetches the public pages and assets without cached responses and verifies they match the deployed commit.
 
 If the container check fails, the running image contains stale UI files. If only the public check fails, inspect the deployment target and Caddy upstream: healthy containers alone do not prove the public site serves the new release.
 
@@ -160,6 +176,14 @@ go run .
 ```
 
 Open [http://localhost:8080](http://localhost:8080). MySQL initializes new data volumes from [`doc/table.sql`](doc/table.sql).
+
+For an existing local database volume, apply the [file-list index migration](doc/migrations/001_file_list_indexes.sql) from the repository root after MySQL starts. The command can be rerun.
+
+```sh
+docker compose exec -T mysql sh -c \
+  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --user=root --database="$MYSQL_DATABASE"' \
+  < doc/migrations/001_file_list_indexes.sql
+```
 
 To run the complete containerized stack instead, use `docker compose up -d --build`. Caddy publishes ports 80 and 443; the application remains private inside the Compose network.
 

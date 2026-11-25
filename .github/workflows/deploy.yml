@@ -57,6 +57,9 @@ jobs:
           docker compose run --rm --no-deps -T --interactive=false caddy \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile </dev/null
           docker compose up -d --build --remove-orphans --wait --wait-timeout 120
+          docker compose exec -T mysql sh -c \
+            'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --user=root --database="$MYSQL_DATABASE"' \
+            < doc/migrations/001_file_list_indexes.sql
           docker compose ps
 
           # A healthy container can still be running an older UI image.

@@ -32,7 +32,7 @@ func main() {
 	}
 	defer cache.CloseRedis()
 
-	if err := storage.InitR2(); err != nil {
+	if err := storage.Init(); err != nil {
 		log.Fatal(err)
 	}
 

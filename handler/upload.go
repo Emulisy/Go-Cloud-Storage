@@ -60,10 +60,11 @@ func UploadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 
 	// 4. Upload under a unique key so cleanup cannot delete another upload.
 	key := "objects/" + storedFile.Hash + "/" + rand.Text()
-	storedFile.Addr = "r2://" + key
+	store := storage.Store()
+	storedFile.Addr = store.Address(key)
 	storedFile.Size = header.Size
-	if err := storage.R2().PutObject(r.Context(), key, file, storedFile.Size, header.Header.Get("Content-Type")); err != nil {
-		log.Printf("failed to upload R2 object %q: %v", key, err)
+	if err := store.PutObject(r.Context(), key, file, storedFile.Size, header.Header.Get("Content-Type")); err != nil {
+		log.Printf("failed to upload S3 object %q: %v", key, err)
 		http.Error(w, "failed to store uploaded file", http.StatusInternalServerError)
 		return
 	}
@@ -183,16 +184,21 @@ func tryFastUpload(ctx context.Context, userID int64, originalFileName string, f
 	if storedFile.Size != fileSize {
 		return false, fmt.Errorf("requested file size does not match stored metadata")
 	}
-	if key, isR2 := strings.CutPrefix(storedFile.Addr, "r2://"); isR2 {
-		info, err := storage.R2().HeadObject(ctx, key)
+	store := storage.Store()
+	key, remote, err := store.ObjectKey(storedFile.Addr)
+	if err != nil {
+		return false, err
+	}
+	if remote {
+		info, err := store.HeadObject(ctx, key)
 		if err != nil {
-			return false, fmt.Errorf("head stored R2 object: %w", err)
+			return false, fmt.Errorf("head stored S3 object: %w", err)
 		}
 		if info.Size != storedFile.Size {
-			return false, fmt.Errorf("stored R2 object does not match metadata")
+			return false, fmt.Errorf("stored S3 object does not match metadata")
 		}
 	} else {
-		// Multipart uploads and older files still use local storage.
+		// Older files may still use local storage.
 		info, err := os.Stat(storedFile.Addr)
 		if err != nil {
 			return false, fmt.Errorf("stat stored file: %w", err)

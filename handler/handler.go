@@ -69,7 +69,7 @@ func GetFileMetaHandler(w http.ResponseWriter, r *http.Request, user auth.User) 
 	_, _ = w.Write(data)
 }
 
-// DownloadHandler streams an owned R2 object or an older local file.
+// DownloadHandler streams an owned S3 object or an older local file.
 func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -97,14 +97,19 @@ func DownloadHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 
 	var file io.ReadCloser
 	var size int64 = -1
-	if key, isR2 := strings.CutPrefix(download.FileAddr, "r2://"); isR2 {
+	store := storage.Store()
+	key, remote, addressErr := store.ObjectKey(download.FileAddr)
+	switch {
+	case addressErr != nil:
+		err = addressErr
+	case remote:
 		var object *storage.Object
-		object, err = storage.R2().GetObject(r.Context(), key)
+		object, err = store.GetObject(r.Context(), key)
 		if err == nil {
 			file = object.Body
 			size = object.Size
 		}
-	} else {
+	default:
 		file, err = os.Open(download.FileAddr)
 	}
 	if err != nil {
@@ -228,13 +233,18 @@ func FileDelHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// removeStoredFile supports R2 addresses and existing local/multipart files.
+// removeStoredFile supports S3 addresses and existing local/multipart files.
 func removeStoredFile(ctx context.Context, addr string) error {
-	if key, isR2 := strings.CutPrefix(addr, "r2://"); isR2 {
+	store := storage.Store()
+	key, remote, err := store.ObjectKey(addr)
+	if err != nil {
+		return err
+	}
+	if remote {
 		// Cleanup must still run if the client disconnects after the DB commits.
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		return storage.R2().DeleteObject(cleanupCtx, key)
+		return store.DeleteObject(cleanupCtx, key)
 	}
 	if err := os.Remove(addr); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
