@@ -5,7 +5,7 @@ import { initSession } from "./controllers/session.js?v=14";
 import { initAuth } from "./controllers/auth.js?v=14";
 import { initAccount } from "./controllers/account.js?v=14";
 import { initFiles } from "./controllers/files.js?v=14";
-import { initUpload } from "./controllers/upload.js?v=14";
+import { initUpload } from "./controllers/upload.js?v=15";
 
 const pageName = document.body.dataset.page;
 const landingPage = document.body.classList.contains("welcome-page");

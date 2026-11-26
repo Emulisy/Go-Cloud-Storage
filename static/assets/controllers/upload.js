@@ -1,6 +1,6 @@
 import { $, bytes, status, sizeLabel, toast } from "../views/shared.js?v=14";
-import { createUploadView } from "../views/upload.js?v=14";
-import { ordinaryLimit } from "../config.js?v=14";
+import { createUploadView } from "../views/upload.js?v=15";
+import { ordinaryLimit } from "../config.js?v=15";
 import { hashFile, checkStoredFile, ordinaryUpload, multipartUpload } from "../requests/uploads.js?v=14";
 export function initUpload(pageName, loadFiles) {
   if (!$("#upload-form")) return;

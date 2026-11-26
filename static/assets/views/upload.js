@@ -1,5 +1,5 @@
 import { $, makeIcon, metadata, toast, status, sizeLabel } from "./shared.js?v=14";
-import { ordinaryLimit } from "../config.js?v=14";
+import { ordinaryLimit } from "../config.js?v=15";
 export function createUploadView(pageName, state, onSelect) {
   const uploadPanel = $("#upload-panel"), uploadForm = $("#upload-form");
   const submitUpload = uploadForm && $('button[type="submit"]', uploadForm);
