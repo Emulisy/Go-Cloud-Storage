@@ -1,7 +1,9 @@
 package db
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -47,6 +49,26 @@ func InitDB() error {
 
 	fmt.Println("Successfully connected to MySQL")
 
+	return nil
+}
+
+// CheckStoredObjectAddresses keeps the app offline until old objects are migrated.
+func CheckStoredObjectAddresses() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var needsMigration bool
+	err := DBConn().QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM tbl_file
+		WHERE LOCATE('://', file_addr) > 0
+		  AND CAST(file_addr AS BINARY) NOT LIKE 's3://%'
+	)`).Scan(&needsMigration)
+	if err != nil {
+		return fmt.Errorf("check stored object addresses: %w", err)
+	}
+	if needsMigration {
+		return errors.New("database contains object addresses that must be migrated to MinIO before starting the app")
+	}
 	return nil
 }
 

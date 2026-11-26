@@ -14,7 +14,7 @@ flowchart TB
     Files[File and multipart handlers]
     DB[(MySQL: users and file metadata)]
     Cache[(Redis: upload sessions and part records)]
-    R2[(Cloudflare R2: object storage)]
+    MinIO[(MinIO: object storage)]
 
     Browser -->|HTTPS| Caddy
     Caddy -->|Private Docker network| Server
@@ -25,10 +25,10 @@ flowchart TB
     Accounts --> DB
     Files --> DB
     Files --> Cache
-    Files -->|S3-compatible API| R2
+    Files -->|S3-compatible API| MinIO
 ```
 
-The browser never receives R2 credentials or uploads directly to R2. File bytes pass through the Go backend, which enforces authentication, calculates or verifies content hashes, and coordinates metadata and upload state.
+The browser never receives MinIO credentials or uploads directly to MinIO. File bytes pass through the Go backend, which enforces authentication, calculates or verifies content hashes, and coordinates metadata and upload state.
 
 | Component | Responsibility | Technology |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ The browser never receives R2 credentials or uploads directly to R2. File bytes 
 | Application | HTTP routes, authentication, uploads, downloads | Go `net/http` |
 | Metadata store | Users, ownership, names, hashes, storage locations | MySQL 8.4 |
 | Upload state | Resumable sessions and completed part metadata | Redis 7 |
-| Object store | File content and multipart assembly | Cloudflare R2 |
+| Object store | File content and multipart assembly | MinIO |
 | Runtime | Isolated services and private networking | Docker Compose |
 
 In production, only Caddy publishes host ports 80 and 443. The Go application is reachable at `app:8080` only inside the Compose network. MySQL and Redis are bound to VM loopback for diagnostics and are not publicly exposed.
@@ -87,7 +87,7 @@ sequenceDiagram
     participant B as Browser
     participant G as Go backend
     participant C as Redis
-    participant R as Cloudflare R2
+    participant R as MinIO
     participant D as MySQL
 
     B->>B: Calculate file SHA-256
@@ -113,7 +113,7 @@ sequenceDiagram
     end
 ```
 
-Sessions are scoped by user ID and file hash and expire after 24 hours. Successful part uploads refresh the expiry. Public chunk indices are zero-based; the backend converts them to R2's one-based part numbers. Completion requires all expected parts and verifies both the assembled size and SHA-256 digest.
+Sessions are scoped by user ID and file hash and expire after 24 hours. Successful part uploads refresh the expiry. Public chunk indices are zero-based; the backend converts them to MinIO's one-based part numbers. Completion requires all expected parts and verifies both the assembled size and SHA-256 digest.
 
 ## Authentication and request conventions
 
@@ -157,13 +157,13 @@ Sessions are scoped by user ID and file hash and expire after 24 hours. Successf
 | GET | `/api/uploads/{filehash}` | None | Session and uploaded chunks |
 | PUT | `/api/uploads/{filehash}/parts/{index}` | Raw chunk bytes | Stored part JSON |
 | POST | `/api/uploads/{filehash}/completion` | None | Completed upload JSON |
-| DELETE | `/api/uploads/{filehash}` | None | `204`; aborts R2 upload and removes Redis state |
+| DELETE | `/api/uploads/{filehash}` | None | `204`; aborts MinIO upload and removes Redis state |
 
 All file and multipart endpoints require authentication. Chunks are 5 MiB except for the final chunk, and an upload may contain at most 10,000 parts.
 
 ## Consistency and security notes
 
-- MySQL metadata and R2 object operations are not one atomic transaction. Production maintenance should reconcile objects retained after uncertain failures.
-- Expired Redis sessions require periodic cleanup of abandoned R2 multipart uploads.
+- MySQL metadata and MinIO object operations are not one atomic transaction. Production maintenance should reconcile objects retained after uncertain failures.
+- Expired Redis sessions require periodic cleanup of abandoned MinIO multipart uploads.
 - Fast upload currently reuses content by hash and size. A hardened multi-tenant deployment should additionally prove that the requester is allowed to reference matching content.
 - Caddy terminates public TLS; application, database, and cache traffic remains on the VM's private Docker network or loopback interface.

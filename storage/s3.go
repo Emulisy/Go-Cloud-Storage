@@ -22,15 +22,11 @@ import (
 )
 
 type S3Store struct {
-	client        *s3.Client
-	bucket        string
-	addressPrefix string
+	client *s3.Client
+	bucket string
 }
 
-const (
-	r2AddressPrefix    = "r2://"
-	minioAddressPrefix = "s3://"
-)
+const objectAddressPrefix = "s3://"
 
 type Object struct {
 	Body        io.ReadCloser
@@ -56,44 +52,28 @@ var (
 
 // Init loads configuration without contacting the bucket. Call it at startup.
 func Init() error {
-	var envPrefix, addressPrefix, defaultRegion, schemes string
-	backend := os.Getenv("STORAGE_BACKEND")
-	minio := backend == "minio"
-	switch backend {
-	case "", "r2":
-		envPrefix, addressPrefix, defaultRegion, schemes = "R2_", r2AddressPrefix, "auto", "an HTTPS"
-	case "minio":
-		envPrefix, addressPrefix, defaultRegion, schemes = "MINIO_", minioAddressPrefix, "us-east-1", "an HTTP or HTTPS"
-	default:
-		return errors.New("STORAGE_BACKEND must be r2 or minio")
-	}
-
-	accessKey := os.Getenv(envPrefix + "ACCESS_KEY_ID")
-	secretKey := os.Getenv(envPrefix + "SECRET_ACCESS_KEY")
-	endpoint := os.Getenv(envPrefix + "ENDPOINT")
-	bucket := os.Getenv(envPrefix + "BUCKET")
-	region := os.Getenv(envPrefix + "REGION")
+	accessKey := os.Getenv("MINIO_ACCESS_KEY_ID")
+	secretKey := os.Getenv("MINIO_SECRET_ACCESS_KEY")
+	endpoint := os.Getenv("MINIO_ENDPOINT")
+	bucket := os.Getenv("MINIO_BUCKET")
+	region := os.Getenv("MINIO_REGION")
 
 	if region == "" {
-		region = defaultRegion
+		region = "us-east-1"
 	}
 
-	if accessKey == "" ||
-		secretKey == "" ||
-		endpoint == "" ||
-		bucket == "" {
-
-		return fmt.Errorf("%s configuration is incomplete", strings.TrimSuffix(envPrefix, "_"))
+	if accessKey == "" || secretKey == "" || endpoint == "" || bucket == "" {
+		return errors.New("set MINIO_ACCESS_KEY_ID, MINIO_SECRET_ACCESS_KEY, MINIO_ENDPOINT, and MINIO_BUCKET")
 	}
-	if minio && !strings.Contains(endpoint, "://") {
+	if !strings.Contains(endpoint, "://") {
 		endpoint = "http://" + endpoint
 	}
 	endpointURL, err := url.Parse(endpoint)
-	if err != nil || (endpointURL.Scheme != "https" && !(minio && endpointURL.Scheme == "http")) ||
+	if err != nil || (endpointURL.Scheme != "https" && endpointURL.Scheme != "http") ||
 		endpointURL.Hostname() == "" ||
 		endpointURL.User != nil || endpointURL.RawQuery != "" || endpointURL.ForceQuery ||
 		endpointURL.Fragment != "" || (endpointURL.Path != "" && endpointURL.Path != "/") {
-		return fmt.Errorf("%sENDPOINT must be %s service endpoint without a bucket path, credentials, query, or fragment", envPrefix, schemes)
+		return errors.New("MINIO_ENDPOINT must be an HTTP or HTTPS service endpoint without a bucket path, credentials, query, or fragment")
 	}
 
 	cfg, err := config.LoadDefaultConfig(
@@ -114,16 +94,15 @@ func Init() error {
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(endpoint)
 		o.UsePathStyle = true
-		// Avoid optional AWS checksum trailers for S3 compatibility.
+		// Use only the checksums required by the S3 API.
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 
 	storeMu.Lock()
 	store = &S3Store{
-		client:        client,
-		bucket:        bucket,
-		addressPrefix: addressPrefix,
+		client: client,
+		bucket: bucket,
 	}
 	storeMu.Unlock()
 
@@ -138,18 +117,16 @@ func Store() *S3Store {
 
 // Address returns the location stored in MySQL for an object in the active bucket.
 func (s *S3Store) Address(key string) string {
-	return s.addressPrefix + key
+	return objectAddressPrefix + key
 }
 
 // ObjectKey resolves a remote address or identifies a legacy filesystem path.
 func (s *S3Store) ObjectKey(address string) (key string, remote bool, err error) {
-	if s != nil {
-		if key, ok := strings.CutPrefix(address, s.addressPrefix); ok {
-			return key, true, nil
-		}
+	if key, ok := strings.CutPrefix(address, objectAddressPrefix); ok {
+		return key, true, nil
 	}
-	if strings.HasPrefix(address, r2AddressPrefix) || strings.HasPrefix(address, minioAddressPrefix) {
-		return "", true, errors.New("stored object belongs to a different storage backend")
+	if strings.Contains(address, "://") {
+		return "", true, errors.New("stored object address must be migrated to MinIO")
 	}
 	return "", false, nil
 }

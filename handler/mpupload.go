@@ -22,6 +22,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const objectUploadIDField = "object_upload_id"
+
+func multipartUploadID(session map[string]string) string {
+	if id := session[objectUploadIDField]; id != "" {
+		return id
+	}
+	// The previous release used this field for active MinIO sessions too.
+	return session["r2_upload_id"]
+}
+
 // initialize mp upload, return the data for later partition
 func InitialMPUploadHandler(
 	w http.ResponseWriter,
@@ -111,7 +121,7 @@ func InitialMPUploadHandler(
 			return
 		}
 
-		if existingSession["r2_upload_id"] == "" || existingSession["object_key"] == "" {
+		if multipartUploadID(existingSession) == "" || existingSession["object_key"] == "" {
 			http.Error(w, "Legacy upload session cannot be resumed in S3", http.StatusConflict)
 			return
 		}
@@ -227,17 +237,17 @@ func InitialMPUploadHandler(
 			// A new S3 upload must not reuse stale part ETags.
 			pipe.Del(r.Context(), "mpupload:chunks:userid:"+strconv.FormatInt(user.UserID, 10)+":"+fileHash)
 			pipe.HSet(r.Context(), sessionKey, map[string]any{
-				"user_id":      strconv.FormatInt(user.UserID, 10),
-				"file_hash":    info.FileHash,
-				"file_size":    info.FileSize,
-				"file_name":    info.FileName,
-				"upload_id":    info.UploadID,
-				"r2_upload_id": uploadID,
-				"object_key":   objectKey,
-				"chunk_size":   info.ChunkSize,
-				"chunk_count":  info.ChunkCount,
-				"status":       "uploading",
-				"created_at":   info.CreatedAt,
+				"user_id":           strconv.FormatInt(user.UserID, 10),
+				"file_hash":         info.FileHash,
+				"file_size":         info.FileSize,
+				"file_name":         info.FileName,
+				"upload_id":         info.UploadID,
+				objectUploadIDField: uploadID,
+				"object_key":        objectKey,
+				"chunk_size":        info.ChunkSize,
+				"chunk_count":       info.ChunkCount,
+				"status":            "uploading",
+				"created_at":        info.CreatedAt,
 			})
 
 			pipe.Expire(r.Context(), sessionKey, 24*time.Hour)
@@ -345,7 +355,8 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 	}
 
 	// 3. Stream the chunk to S3; public chunk indices remain zero-based.
-	if info["r2_upload_id"] == "" || info["object_key"] == "" {
+	uploadID := multipartUploadID(info)
+	if uploadID == "" || info["object_key"] == "" {
 		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
@@ -354,7 +365,7 @@ func UploadPartHandler(w http.ResponseWriter, r *http.Request, user auth.User) {
 		return
 	}
 	body := &io.LimitedReader{R: r.Body, N: expected + 1}
-	part, err := storage.Store().UploadPart(r.Context(), info["object_key"], info["r2_upload_id"], int32(index+1), body, expected)
+	part, err := storage.Store().UploadPart(r.Context(), info["object_key"], uploadID, int32(index+1), body, expected)
 	if err != nil {
 		log.Printf("Upload S3 part %d: %v", index+1, err)
 		http.Error(w, "Unable to upload chunk", http.StatusInternalServerError)
@@ -458,7 +469,8 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 		http.Error(w, "Upload is not in progress", http.StatusConflict)
 		return
 	}
-	if info["r2_upload_id"] == "" || info["object_key"] == "" {
+	uploadID := multipartUploadID(info)
+	if uploadID == "" || info["object_key"] == "" {
 		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
@@ -500,7 +512,7 @@ func UploadCompleteHandler(w http.ResponseWriter, r *http.Request, user auth.Use
 	// 4. S3 assembles the object. Stream it back only to preserve SHA-256
 	// verification before shared content is recorded in MySQL; no local files.
 	store := storage.Store()
-	completeErr := store.CompleteMultipartUpload(ctx, info["object_key"], info["r2_upload_id"], parts)
+	completeErr := store.CompleteMultipartUpload(ctx, info["object_key"], uploadID, parts)
 	object, err := store.GetObject(ctx, info["object_key"])
 	if err != nil {
 		log.Printf("Complete/read S3 multipart upload: complete=%v, get=%v", completeErr, err)
@@ -618,7 +630,8 @@ func UploadCancelHandler(
 		http.Error(w, "Upload is not active", http.StatusConflict)
 		return
 	}
-	if info["r2_upload_id"] == "" || info["object_key"] == "" {
+	uploadID := multipartUploadID(info)
+	if uploadID == "" || info["object_key"] == "" {
 		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}
@@ -627,7 +640,7 @@ func UploadCancelHandler(
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 	defer cancel()
 
-	if err := storage.Store().AbortMultipartUpload(ctx, info["object_key"], info["r2_upload_id"]); err != nil {
+	if err := storage.Store().AbortMultipartUpload(ctx, info["object_key"], uploadID); err != nil {
 		log.Printf("Abort S3 multipart upload: %v", err)
 		http.Error(w, "Unable to cancel upload", http.StatusInternalServerError)
 		return
@@ -707,7 +720,7 @@ func UploadStatusHandler(
 		return
 	}
 
-	if info["r2_upload_id"] == "" || info["object_key"] == "" {
+	if multipartUploadID(info) == "" || info["object_key"] == "" {
 		http.Error(w, "Upload session has no S3 upload", http.StatusConflict)
 		return
 	}

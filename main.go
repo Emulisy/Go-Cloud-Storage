@@ -27,6 +27,10 @@ func main() {
 
 	defer db.DBConn().Close()
 
+	if err := db.CheckStoredObjectAddresses(); err != nil {
+		log.Fatal(err)
+	}
+
 	if err := cache.InitRedis(); err != nil {
 		log.Fatal(err)
 	}

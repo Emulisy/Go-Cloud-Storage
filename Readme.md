@@ -1,218 +1,102 @@
-# GoCloudStorage
+# <img src="static/assets/favicon.svg" width="34" height="34" alt=""> GoCloudStorage
 
-A full-stack cloud storage application built with Go, MySQL, Redis, and Cloudflare R2. It supports content-addressable storage, resumable multipart uploads, integrity verification, and automated deployment to an Azure VM.
+GoCloudStorage is a personal file storage app built with Go. Upload, download, rename, and delete files in a browser, pause and resume large transfers, and reuse matching files without uploading them again. MySQL stores account and file metadata, Redis tracks multipart uploads, and MinIO stores file contents.
 
-**[Live demo](https://emulisygocloud.southeastasia.cloudapp.azure.com)** · **[Architecture and API](architecture.md)**
+[Azure deployment](https://emulisygocloud.southeastasia.cloudapp.azure.com) · [Run locally with MinIO](#run-locally-with-minio) · [Deploy to Azure](#deploy-to-azure) · [Architecture and API](architecture.md)
 
 ## Features
 
-- **Content-addressable storage (CAS)** — SHA-256 identifies stored content independently of filenames. Multiple user file records can reference one R2 object, avoiding duplicate storage.
-- **Fast upload and deduplication** — when matching content already exists, the application creates a user reference without uploading the bytes again.
-- **Resumable multipart uploads** — files are split into 5 MiB chunks. Redis tracks uploaded R2 parts so interrupted transfers can continue from the missing chunk.
-- **End-to-end integrity checks** — completed multipart objects are read back from R2 and verified against the expected SHA-256 digest and file size before metadata is committed.
-- **Reference-aware deletion** — removing one user's file preserves shared content until its final reference is deleted.
-- **Authenticated file management** — bcrypt password hashing, signed JWT cookies, user-scoped CRUD operations, pagination, renaming, upload progress, and drag-and-drop file selection.
-- **Production deployment** — Docker Compose runs Caddy, the Go application, MySQL, and Redis. Caddy provides automatic HTTPS, and GitHub Actions deploys pushes to `main` over SSH.
+- **Personal workspace.** Manage files and account details from a browser. Passwords are hashed with bcrypt, and signed JWT cookies authenticate requests.
+- **Resumable transfers.** The browser uploads new files over 100 MiB in 5 MiB parts, with a smaller final part when needed. Redis records completed parts so you can reselect the same file and resume. Each successful part extends the session for 24 hours.
+- **Deduplication by content.** The app checks the SHA-256 digest and size to reuse matching content. MySQL keeps filenames and ownership separate from the shared object, so deleting a file preserves the object while another reference exists.
+- **Multipart integrity verification.** The Go server streams the completed object from storage and verifies its SHA-256 digest and size before saving its metadata.
 
-## Technology
+## Run locally with MinIO
 
-| Area | Stack |
-| --- | --- |
-| Backend | Go, `net/http`, AWS SDK for Go v2 |
-| Frontend | HTML, CSS, JavaScript |
-| Metadata | MySQL 8.4 |
-| Upload state | Redis 7 |
-| Object storage | Cloudflare R2 |
-| Infrastructure | Docker Compose, Caddy, Ubuntu, Azure VM |
-| Delivery | GitHub Actions, SSH, rsync |
-
-## Frontend structure
-
-The browser uses native JavaScript modules without a build step. Every page loads `static/assets/app.js`, which initializes the page features.
-
-- `static/assets/views/` handles rendering, formatting, validation, and local UI interactions. It performs no network requests.
-- `static/assets/requests/` sends HTTP requests, reads and validates responses, and handles ordinary and multipart transfers. It has no DOM dependencies.
-- `static/assets/controllers/` connects user actions and request results to the views for authentication, account settings, files, and uploads.
-- `static/assets/config.js` shares the upload limit and download route helper.
-
-Run the request regression checks with Node.js 22 or later:
-
-```sh
-node --experimental-default-type=module --test tests/frontend.test.mjs
-```
-
-## Deploy to an Ubuntu Azure VM
-
-### Configure a MinIO-backed app
-
-The app defaults to R2. To use the MinIO service over the Compose network, give the app credentials scoped to its bucket and set these values in its environment file.
-
-```dotenv
-STORAGE_BACKEND=minio
-MINIO_ENDPOINT=http://minio:9000
-MINIO_BUCKET=cloud-storage
-MINIO_ACCESS_KEY_ID=replace-with-bucket-access-key
-MINIO_SECRET_ACCESS_KEY=replace-with-bucket-secret-key
-MINIO_REGION=us-east-1
-```
-
-Start the MinIO service with `docker compose up -d minio` before starting the MinIO-backed app. Test with `gocloudstorage-test` and isolated MySQL and Redis first. For a fresh production cutover, use an empty production bucket, new MySQL and Redis volumes, and a new `JWT_SECRET` so cookies from the old database cannot authenticate new accounts.
-
-### 1. Prepare Azure and external services
-
-Create or configure:
-
-- An Ubuntu Azure VM with at least 2 GiB RAM; 4 GiB is recommended when building the image on the VM.
-- The DNS name `emulisygocloud.southeastasia.cloudapp.azure.com` pointing to the VM.
-- Azure Network Security Group rules allowing TCP ports `22`, `80`, and `443`. Do not expose `8080`, `3306`, or `6379` publicly.
-- A Cloudflare R2 bucket and API credentials.
-
-### 2. Bootstrap the VM
+You need Docker with Compose and either an existing MinIO server or an AIStor license for the bundled service. For a fresh checkout, create `.env` from the [configuration template](.env.example).
 
 ```sh
 git clone https://github.com/Emulisy/Go-Cloud-Storage.git
 cd Go-Cloud-Storage
-sudo bash deploy/setup-server.sh
+cp .env.example .env
 ```
 
-The script installs Docker Engine and the Compose plugin, copies the project to `/opt/gocloudstorage`, creates a protected `.env`, and grants the SSH user Docker access. Log out and reconnect after it completes.
+Set these values in `.env`.
 
-If Ubuntu already has the conflicting `docker-compose-v2` package, remove it and rerun setup:
-
-```sh
-sudo apt-get remove -y docker-compose-v2
-sudo apt-get --fix-broken install -y
-sudo bash deploy/setup-server.sh
-```
-
-### 3. Configure production secrets
-
-Edit `/opt/gocloudstorage/.env`:
-
-```dotenv
-MYSQL_ROOT_PASSWORD=replace-with-a-strong-root-password
-MYSQL_DATABASE=gocloudstorage
-MYSQL_USER=gocloudstorage
-MYSQL_PASSWORD=replace-with-a-strong-app-password
-
-REDIS_DB=0
-REDIS_PASSWORD=
-
-JWT_SECRET=replace-with-at-least-32-random-bytes
-
-R2_ACCESS_KEY_ID=replace-with-your-access-key-id
-R2_SECRET_ACCESS_KEY=replace-with-your-secret-access-key
-R2_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
-R2_BUCKET=replace-with-your-bucket-name
-R2_REGION=auto
-```
-
-Protect and validate the file:
-
-```sh
-chmod 600 /opt/gocloudstorage/.env
-cd /opt/gocloudstorage
-docker compose config --quiet
-```
-
-The R2 endpoint must be an HTTPS service URL without a bucket path. The supplied Redis container does not require a password, so `REDIS_PASSWORD` remains empty.
-
-### 4. Configure GitHub Actions
-
-Add these repository secrets under **Settings → Secrets and variables → Actions**:
-
-| Secret | Value |
+| Settings | What to enter |
 | --- | --- |
-| `AZURE_VM_HOST` | `emulisygocloud.southeastasia.cloudapp.azure.com` |
-| `AZURE_VM_USER` | VM SSH username |
-| `AZURE_VM_SSH_PRIVATE_KEY` | Complete private deployment key |
-| `AZURE_VM_SSH_KNOWN_HOSTS` | Verified SSH host-key entry for the VM |
+| `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` | Set the root and app passwords and use the database and app username from the template or choose your own. |
+| `JWT_SECRET` | A random secret of at least 32 bytes. |
+| `MINIO_ENDPOINT`, `MINIO_BUCKET` | Use `http://minio:9000` for the bundled service. For an existing server, enter an endpoint reachable from the app container. Enter the bucket name separately. |
+| `MINIO_ACCESS_KEY_ID`, `MINIO_SECRET_ACCESS_KEY`, `MINIO_REGION` | Use credentials scoped to the app bucket and set the region if it differs from `us-east-1`. |
 
-The workflow in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main` and can also be started manually. It:
+Keep `REDIS_PASSWORD` empty for the bundled Redis service. If you have an existing MinIO bucket and credentials, skip to [Start the app](#start-the-app).
 
-1. Synchronizes the repository to `/opt/gocloudstorage` while preserving `.env`.
-2. Validates the Compose and Caddy configuration.
-3. Pulls service images and rebuilds the Go application.
-4. Starts the stack and waits for service health checks.
-5. Applies the MySQL file-list index migration to the database volume.
-6. Compares every UI file in the running app container with the uploaded source.
-7. Fetches the public pages and assets without cached responses and verifies they match the deployed commit.
+### Bundled MinIO service
 
-If the container check fails, the running image contains stale UI files. If only the public check fails, inspect the deployment target and Caddy upstream: healthy containers alone do not prove the public site serves the new release.
+1. Place your AIStor license at `$MINIO_CONFIG_DIR/minio.license`. The Compose default directory is `/etc/gocloudstorage/minio`. Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env`. [MinIO AIStor container setup](https://docs.min.io/aistor/installation/container/install/)
+2. Run `docker compose --profile minio up -d minio`. Create the bucket named by `MINIO_BUCKET` and provision app credentials that can read, write, delete, and manage multipart uploads in that bucket. You can run `mc` inside the MinIO container using `docker compose --profile minio exec minio mc` and connect it to `http://127.0.0.1:9000`. [MinIO access control](https://docs.min.io/aistor/administration/iam/access/)
+3. Set `MINIO_ACCESS_KEY_ID` and `MINIO_SECRET_ACCESS_KEY` in `.env` to the app credentials.
 
-The remote script arrives over SSH on standard input. Caddy validation runs with interactive input disabled and stdin redirected to `/dev/null` so it cannot consume the remaining rebuild and restart commands. A deployment log that ends at `Valid configuration` has not reached the application rebuild.
+### Start the app
 
-### 5. Verify deployment
+Start MySQL and Redis, then build and run the app container with port 8080 published on localhost.
 
 ```sh
-cd /opt/gocloudstorage
-docker compose ps
-docker compose logs --tail=100 caddy app
-curl -I http://127.0.0.1 -H 'Host: emulisygocloud.southeastasia.cloudapp.azure.com'
+docker compose up -d --wait mysql redis
+docker compose run --rm --build --no-deps --publish 127.0.0.1:8080:8080 app
 ```
 
-Then open the [live application](https://emulisygocloud.southeastasia.cloudapp.azure.com).
+Open [http://localhost:8080](http://localhost:8080), create an account, and upload a file. Upload the same file again to try deduplication. To try resuming, pause an upload over 100 MiB, then select **Resume upload**.
 
-## Run locally
+> [!NOTE]
+> MySQL loads [the schema](doc/table.sql) when it initializes a new volume. For a volume created before the file-list indexes were added, run [the migration](doc/migrations/001_file_list_indexes.sql) from the repository root in Bash. The migration can be rerun.
 
-### Prerequisites
-
-- Go `1.26.4`, as declared in `go.mod`
-- Docker with Docker Compose
-- A Cloudflare R2 bucket and credentials
-
-Create `.env` using the variables from the deployment section. For host-based development, optionally set:
-
-```dotenv
-REDIS_ADDR=127.0.0.1:6379
-```
-
-Start MySQL and Redis, then run the Go application:
-
-```sh
-docker compose up -d mysql redis
-go mod download
-go run .
-```
-
-Open [http://localhost:8080](http://localhost:8080). MySQL initializes new data volumes from [`doc/table.sql`](doc/table.sql).
-
-For an existing local database volume, apply the [file-list index migration](doc/migrations/001_file_list_indexes.sql) from the repository root after MySQL starts. The command can be rerun.
-
-```sh
+```bash
 docker compose exec -T mysql sh -c \
   'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --user=root --database="$MYSQL_DATABASE"' \
   < doc/migrations/001_file_list_indexes.sql
 ```
 
-To run the complete containerized stack instead, use `docker compose up -d --build`. Caddy publishes ports 80 and 443; the application remains private inside the Compose network.
+> [!IMPORTANT]
+> The app uses `s3://<object-key>` addresses for files in the configured MinIO bucket. For a fresh MinIO installation, use a new database volume. To carry over existing remote files, copy them to MinIO under the same keys, verify their size and SHA-256 digest, and update their stored addresses before starting the app.
 
-## Documentation
+## Architecture
 
-- [Architecture, CAS data model, upload protocol, and API reference](architecture.md)
-- [Database schema](doc/table.sql)
-- [Deployment workflow](.github/workflows/deploy.yml)
+The browser uses HTML, CSS, and native JavaScript modules served by Go's `net/http` server. The server handles uploads and downloads and connects to object storage through the AWS SDK for Go v2.
 
-## Project structure
+| Component | Responsibility |
+| --- | --- |
+| [`static/`](static/) | Browser pages, view rendering, controllers, and API requests. |
+| [`main.go`](main.go), [`handler/`](handler/), [`auth/`](auth/) | HTTP routes, account and file operations, and session authentication. |
+| [`db/`](db/), [`cache/`](cache/) | MySQL account and file metadata, plus Redis upload sessions and completed parts. |
+| [`storage/`](storage/) | MinIO object operations through the S3 API. |
+| [`compose.yaml`](compose.yaml), [`deploy/`](deploy/) | Services, the Caddy reverse proxy, and Ubuntu VM setup. |
 
-```text
-.
-|-- auth/                  # JWT authentication and middleware
-|-- cache/                 # Redis client and upload state
-|-- db/                    # MySQL access and metadata operations
-|-- deploy/                # Caddy configuration and VM setup
-|-- doc/table.sql          # Database schema
-|-- handler/               # HTTP handlers
-|-- static/                # Browser interface
-|-- storage/               # Cloudflare R2 integration
-|-- architecture.md        # Detailed design and API reference
-|-- compose.yaml           # Production service topology
-|-- dockerfile             # Go application image
-`-- main.go                # Application entry point and routes
+See the [architecture and HTTP API reference](architecture.md) for the data model, upload sequence, endpoint details, and deployment considerations.
+
+## Deploy to Azure
+
+The included deployment uses Docker Compose on an Ubuntu Azure VM. Caddy terminates HTTPS and forwards requests to the Go container. MySQL and Redis publish ports on VM loopback for diagnostics.
+
+1. Point a DNS hostname at the VM and allow inbound HTTP and HTTPS on ports 80 and 443 and SSH from your deployment runner. For a new hostname, update the site address in [`deploy/Caddyfile`](deploy/Caddyfile) and `APP_URL` in the [deployment workflow](.github/workflows/deploy.yml).
+2. Clone the repository on the VM and run `sudo bash deploy/setup-server.sh` from that checkout. The script installs Docker and Compose, copies the checkout to `/opt/gocloudstorage`, and creates a protected `.env` there. Reconnect over SSH after setup so Docker group membership takes effect.
+3. Fill in `/opt/gocloudstorage/.env` using [`.env.example`](.env.example). If you're using the bundled MinIO service, [start MinIO and provision its bucket](#bundled-minio-service) on the VM, then set `COMPOSE_PROFILES=minio` in `.env`. From `/opt/gocloudstorage`, run `docker compose config --quiet` to validate the configuration.
+4. Configure these GitHub Actions secrets for the `production` environment, then run **Deploy to Azure VM** manually or push to `main`.
+
+   | Secret | Value |
+   | --- | --- |
+   | `AZURE_VM_HOST` | VM hostname used for SSH. |
+   | `AZURE_VM_USER` | VM user with access to Docker and `/opt/gocloudstorage`. |
+   | `AZURE_VM_SSH_PRIVATE_KEY` | Private key for the deployment user. |
+   | `AZURE_VM_SSH_KNOWN_HOSTS` | Verified SSH host-key entry for the VM. |
+
+The workflow syncs the source while preserving the VM's `.env`, validates Caddy, rebuilds the app, waits for the services to become healthy, and applies the file-list index migration. It checks that UI files in the running container and responses from selected public routes match the commit. For deployment logs, run `docker compose logs --tail=100 caddy app` from `/opt/gocloudstorage`.
+
+## Tests
+
+With Go 1.26.4 or later installed, run the tests from the repository root. The storage tests cover backend configuration and how the app resolves stored object addresses.
+
+```sh
+go test ./...
 ```
-
-## Current limitations
-
-- Fast upload reuses content by hash and size; a hardened multi-tenant deployment should additionally verify authorization to reference matching content.
-- MySQL and R2 changes are not atomic, so uncertain failures may require object reconciliation.
-- Expired Redis sessions require cleanup of abandoned R2 multipart uploads.
