@@ -1,5 +1,5 @@
 import { getFiles, renameFile, deleteFile } from "../requests/files.js?v=14";
-import { createFilesView } from "../views/files.js?v=14";
+import { createFilesView } from "../views/files.js?v=16";
 
 export function initFiles(pageName) {
   let loading = false, refreshQueued = false;

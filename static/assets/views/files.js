@@ -58,6 +58,9 @@ export function createFilesView({ onRename, onDelete, onRefresh }) {
     form.className = "rename-inline";
     const input = document.createElement("input");
     input.name = "name"; input.value = file.fileName; input.required = true;
+    input.autocapitalize = "none";
+    input.setAttribute("autocorrect", "off");
+    input.spellcheck = false;
     input.setAttribute("aria-label", `New name for ${file.fileName}`);
     const save = document.createElement("button");
     save.type = "submit"; save.className = "button button-primary"; save.textContent = "Save";
@@ -105,10 +108,8 @@ export function createFilesView({ onRename, onDelete, onRefresh }) {
     $("#dialog-title").textContent = `Delete “${file.fileName}”?`;
     status($("#dialog-status"));
     dialog.showModal();
-    $("#dialog-cancel").focus();
   }
   if (dialog) {
-    $("#dialog-cancel").addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => { if (deleteTrigger?.isConnected) deleteTrigger.focus(); });
     dialog.addEventListener("cancel", event => { if ($("#dialog-submit").disabled) event.preventDefault(); });
     $("#file-action-form").addEventListener("submit", async event => {
