@@ -7,7 +7,7 @@ GoCloudStorage is a personal file storage app built with Go. Upload, download, r
 ## Features
 
 - **Personal workspace.** Manage files and account details from a browser. Passwords are hashed with bcrypt, and signed JWT cookies authenticate requests.
-- **Resumable transfers.** The browser uploads new files over 100 MiB in 5 MiB parts, with a smaller final part when needed. Redis records completed parts so you can reselect the same file and resume. Each successful part extends the session for 24 hours.
+- **Resumable transfers.** The browser uploads new files over 5 MiB in 5 MiB parts, with a smaller final part when needed. Redis records completed parts so you can reselect the same file and resume. Each successful part extends the session for 24 hours.
 - **Deduplication by content.** The app checks the SHA-256 digest and size to reuse matching content. MySQL keeps filenames and ownership separate from the shared object, so deleting a file preserves the object while another reference exists.
 - **Multipart integrity verification.** The Go server streams the completed object from storage and verifies its SHA-256 digest and size before saving its metadata.
 
@@ -47,7 +47,7 @@ docker compose up -d --wait mysql redis
 docker compose run --rm --build --no-deps --publish 127.0.0.1:8080:8080 app
 ```
 
-Open [http://localhost:8080](http://localhost:8080), create an account, and upload a file. Upload the same file again to try deduplication. To try resuming, pause an upload over 100 MiB, then select **Resume upload**.
+Open [http://localhost:8080](http://localhost:8080), create an account, and upload a file. Upload the same file again to try deduplication. To try resuming, pause an upload over 5 MiB, then select **Resume upload**.
 
 > [!NOTE]
 > MySQL loads [the schema](doc/table.sql) when it initializes a new volume. For a volume created before the file-list indexes were added, run [the migration](doc/migrations/001_file_list_indexes.sql) from the repository root in Bash. The migration can be rerun.
